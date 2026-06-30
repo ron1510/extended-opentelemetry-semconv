@@ -1,0 +1,35 @@
+{
+  "evidence": [
+    {
+      "evidence_id": "servicegraph-001",
+      "source": "servicegraph_metrics",
+      "scope": "derived_metric",
+      "observed_at": "2026-06-30T10:00:00Z",
+      "attributes": {
+        "metric.name": "traces.service.graph.request.total",
+        "client.service.name": "checkout-api",
+        "server.service.name": "payment-api",
+        "deployment.environment.name": "prod",
+        "http.request.method": "POST",
+        "request.count": 921
+      },
+      "provenance": {
+        "connector": "servicegraph",
+        "collector": "otel-gateway",
+        "routing_key": "traceID"
+      }
+    }
+  ],
+  "expected_relationships": [
+    {
+      "relationship_id": "rel:servicegraph:checkout-depends-on-payment",
+      "type": "depends_on",
+      "source_entity_id": "service.logical:prod:commerce:checkout-api",
+      "target_entity_id": "service.logical:prod:commerce:payment-api",
+      "confidence": 0.85,
+      "evidence_ids": ["servicegraph-001"],
+      "first_seen": "2026-06-30T10:00:00Z",
+      "last_seen": "2026-06-30T10:00:00Z"
+    }
+  ]
+}

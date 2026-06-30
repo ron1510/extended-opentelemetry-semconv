@@ -1,0 +1,63 @@
+extensions:
+  health_check:
+    endpoint: "localhost:13133"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+connectors:
+  servicegraph:
+    latency_histogram_buckets: [1ms, 2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s]
+    dimensions:
+      - deployment.environment.name
+      - http.request.method
+    store:
+      ttl: 2s
+      max_items: 10000
+
+exporters:
+  otlp/raw_traces:
+    endpoint: "${env:RAW_TRACE_BACKEND_ENDPOINT:-localhost:4317}"
+    tls:
+      insecure: true
+  otlp/dependency_metrics:
+    endpoint: "${env:DEPENDENCY_METRIC_BACKEND_ENDPOINT:-localhost:4317}"
+    tls:
+      insecure: true
+  debug:
+    verbosity: basic
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/raw_traces, servicegraph]
+    metrics/servicegraph:
+      receivers: [servicegraph]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/dependency_metrics]
+
+# Production notes:
+# - servicegraph is Beta and stateful. If this collector tier has more than one
+#   replica, route spans to it with loadbalancing exporter routing_key: traceID.
+# - This config does not transform or normalize incoming telemetry.
+# - Do not add high-cardinality dimensions such as k8s.pod.uid, k8s.pod.name,
+#   container.id, trace_id, or service.instance.id to servicegraph dimensions.
+# - Bind health_check to localhost in shared networks and expose it through a
+#   controlled probe or port-forwarding path.

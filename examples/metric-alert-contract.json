@@ -1,0 +1,27 @@
+{
+  "contract_id": "k8s-pod-restart-rate-v1",
+  "target_interface": "k8s.pod",
+  "metric_names": ["k8s.pod.restart.count"],
+  "required_evidence_fields": [
+    "k8s.cluster.name",
+    "k8s.namespace.name",
+    "k8s.pod.uid"
+  ],
+  "allowed_dimensions": [
+    "k8s.cluster.name",
+    "k8s.namespace.name",
+    "k8s.deployment.name",
+    "k8s.statefulset.name"
+  ],
+  "entity_evidence_only_fields": [
+    "k8s.pod.uid",
+    "k8s.pod.name",
+    "container.id"
+  ],
+  "rollup_path": [
+    "k8s.pod",
+    "k8s.replicaset|k8s.statefulset",
+    "k8s.deployment|k8s.statefulset",
+    "service.logical"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/asset-relationship.schema.json",
+  "title": "AssetRelationship",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["relationship_id", "type", "source_entity_id", "target_entity_id", "confidence", "evidence_ids", "first_seen", "last_seen"],
+  "properties": {
+    "relationship_id": {"type": "string", "minLength": 1},
+    "type": {"type": "string"},
+    "source_entity_id": {"type": "string", "minLength": 1},
+    "target_entity_id": {"type": "string", "minLength": 1},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "evidence_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string"}
+    },
+    "first_seen": {"type": "string", "format": "date-time"},
+    "last_seen": {"type": "string", "format": "date-time"}
+  }
+}

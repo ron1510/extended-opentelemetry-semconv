@@ -1,0 +1,200 @@
+{
+  "registry_version": "0.1.0",
+  "kind": "asset_interface_registry",
+  "stability": "development",
+  "attribute_policy": {
+    "preserve_observed_names": true,
+    "prefer_upstream_opentelemetry": true,
+    "do_not_rewrite_ingested_telemetry": true,
+    "high_cardinality_ids_are_entity_evidence_only": true
+  },
+  "interfaces": [
+    {
+      "name": "compute.machine",
+      "description": "Base interface for any compute execution host.",
+      "extends": [],
+      "identity_evidence": [
+        {"field": "host.id", "source": "opentelemetry", "strength": "strong"},
+        {"field": "host.name", "source": "opentelemetry", "strength": "medium"},
+        {"field": "cloud.instance.id", "source": "opentelemetry", "strength": "strong"}
+      ],
+      "descriptive_evidence": [
+        "host.arch",
+        "os.type",
+        "os.description",
+        "cloud.provider",
+        "cloud.region",
+        "cloud.availability_zone"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"],
+      "cardinality_notes": [
+        "host.id and cloud.instance.id are entity identifiers, not metric grouping dimensions."
+      ]
+    },
+    {
+      "name": "compute.server",
+      "description": "Physical or inventory-owned server interface.",
+      "extends": ["compute.machine"],
+      "identity_evidence": [
+        {"field": "server.serial_number", "source": "extension", "strength": "strong"},
+        {"field": "server.asset_tag", "source": "extension", "strength": "strong"},
+        {"field": "server.bmc.id", "source": "extension", "strength": "medium"}
+      ],
+      "descriptive_evidence": [
+        "datacenter.name",
+        "rack.name",
+        "rack.position",
+        "server.vendor",
+        "server.model"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"]
+    },
+    {
+      "name": "compute.vm",
+      "description": "Virtual or cloud compute instance interface.",
+      "extends": ["compute.machine"],
+      "identity_evidence": [
+        {"field": "cloud.instance.id", "source": "opentelemetry", "strength": "strong"},
+        {"field": "cloud.provider", "source": "opentelemetry", "strength": "required_context"},
+        {"field": "cloud.account.id", "source": "opentelemetry", "strength": "required_context"}
+      ],
+      "descriptive_evidence": [
+        "cloud.platform",
+        "cloud.region",
+        "cloud.availability_zone",
+        "host.type",
+        "deployment.environment.name"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"]
+    },
+    {
+      "name": "k8s.node",
+      "description": "Kubernetes schedulable node role layered onto a compute machine.",
+      "extends": ["compute.machine"],
+      "identity_evidence": [
+        {"field": "k8s.node.name", "source": "opentelemetry", "strength": "strong"},
+        {"field": "k8s.node.uid", "source": "extension_or_kubernetes_state", "strength": "strong"},
+        {"field": "k8s.cluster.name", "source": "opentelemetry", "strength": "required_context"}
+      ],
+      "descriptive_evidence": [
+        "k8s.node.label.*",
+        "cloud.region",
+        "cloud.availability_zone"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"],
+      "cardinality_notes": [
+        "k8s.node.name is acceptable for small clusters but should be reviewed before use as a metric dimension in clusters above 100 nodes."
+      ]
+    },
+    {
+      "name": "k8s.pod",
+      "description": "Kubernetes Pod instance with an ephemeral lifecycle.",
+      "extends": [],
+      "identity_evidence": [
+        {"field": "k8s.pod.uid", "source": "opentelemetry", "strength": "strong"},
+        {"field": "k8s.pod.name", "source": "opentelemetry", "strength": "medium"},
+        {"field": "k8s.namespace.name", "source": "opentelemetry", "strength": "required_context"},
+        {"field": "k8s.cluster.name", "source": "opentelemetry", "strength": "required_context"}
+      ],
+      "descriptive_evidence": [
+        "k8s.pod.label.*",
+        "k8s.pod.annotation.*",
+        "k8s.node.name"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"],
+      "cardinality_notes": [
+        "k8s.pod.uid and k8s.pod.name are high-cardinality entity evidence and should not be metric dimensions."
+      ]
+    },
+    {
+      "name": "container.instance",
+      "description": "Runtime container instance, not the image definition.",
+      "extends": [],
+      "identity_evidence": [
+        {"field": "container.id", "source": "opentelemetry", "strength": "strong"},
+        {"field": "container.name", "source": "opentelemetry", "strength": "medium"},
+        {"field": "k8s.pod.uid", "source": "opentelemetry", "strength": "required_context"}
+      ],
+      "descriptive_evidence": [
+        "container.image.name",
+        "container.image.tag",
+        "container.image.id",
+        "container.runtime"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"],
+      "cardinality_notes": [
+        "container.id is entity evidence only."
+      ]
+    },
+    {
+      "name": "k8s.deployment",
+      "description": "Kubernetes Deployment workload controller.",
+      "extends": [],
+      "identity_evidence": [
+        {"field": "k8s.deployment.name", "source": "opentelemetry", "strength": "strong"},
+        {"field": "k8s.namespace.name", "source": "opentelemetry", "strength": "required_context"},
+        {"field": "k8s.cluster.name", "source": "opentelemetry", "strength": "required_context"},
+        {"field": "k8s.deployment.uid", "source": "extension_or_kubernetes_state", "strength": "strong"}
+      ],
+      "descriptive_evidence": [
+        "k8s.deployment.label.*",
+        "deployment.environment.name",
+        "service.name"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"]
+    },
+    {
+      "name": "k8s.statefulset",
+      "description": "Kubernetes StatefulSet workload controller.",
+      "extends": [],
+      "identity_evidence": [
+        {"field": "k8s.statefulset.name", "source": "opentelemetry", "strength": "strong"},
+        {"field": "k8s.namespace.name", "source": "opentelemetry", "strength": "required_context"},
+        {"field": "k8s.cluster.name", "source": "opentelemetry", "strength": "required_context"},
+        {"field": "k8s.statefulset.uid", "source": "extension_or_kubernetes_state", "strength": "strong"}
+      ],
+      "descriptive_evidence": [
+        "k8s.statefulset.label.*",
+        "deployment.environment.name",
+        "service.name"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"]
+    },
+    {
+      "name": "k8s.replicaset",
+      "description": "Kubernetes ReplicaSet bridge controller, commonly owned by a Deployment.",
+      "extends": [],
+      "identity_evidence": [
+        {"field": "k8s.replicaset.name", "source": "opentelemetry", "strength": "strong"},
+        {"field": "k8s.namespace.name", "source": "opentelemetry", "strength": "required_context"},
+        {"field": "k8s.cluster.name", "source": "opentelemetry", "strength": "required_context"},
+        {"field": "k8s.replicaset.uid", "source": "extension_or_kubernetes_state", "strength": "strong"}
+      ],
+      "descriptive_evidence": [
+        "k8s.replicaset.label.*"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"]
+    },
+    {
+      "name": "service.logical",
+      "description": "Runtime or application service represented by telemetry.",
+      "extends": [],
+      "identity_evidence": [
+        {"field": "service.name", "source": "opentelemetry", "strength": "strong"},
+        {"field": "service.namespace", "source": "opentelemetry", "strength": "medium"},
+        {"field": "deployment.environment.name", "source": "opentelemetry", "strength": "required_context"}
+      ],
+      "descriptive_evidence": [
+        "service.version",
+        "service.instance.id",
+        "telemetry.sdk.language",
+        "k8s.deployment.name",
+        "k8s.statefulset.name"
+      ],
+      "applicable_scopes": ["resource", "span", "metric_datapoint", "log"],
+      "cardinality_notes": [
+        "service.instance.id is entity evidence and should not be used as a metric dimension."
+      ]
+    }
+  ]
+}

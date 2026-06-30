@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/asset-entity.schema.json",
+  "title": "AssetEntity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity_id", "interfaces", "identity", "confidence", "evidence_ids", "first_seen", "last_seen"],
+  "properties": {
+    "entity_id": {"type": "string", "minLength": 1},
+    "interfaces": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "identity": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": ["string", "number", "integer", "boolean"]
+      }
+    },
+    "descriptive_attributes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "integer", "boolean", "array", "object", "null"]
+      }
+    },
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "status": {
+      "type": "string",
+      "enum": ["provisional", "confirmed", "conflicted", "retired"]
+    },
+    "evidence_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string"}
+    },
+    "first_seen": {"type": "string", "format": "date-time"},
+    "last_seen": {"type": "string", "format": "date-time"}
+  }
+}

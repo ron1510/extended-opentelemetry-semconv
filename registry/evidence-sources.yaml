@@ -1,0 +1,59 @@
+{
+  "registry_version": "0.1.0",
+  "kind": "asset_evidence_source_registry",
+  "stability": "development",
+  "sources": [
+    {
+      "name": "opentelemetry_trace",
+      "description": "Raw OTLP traces, resource attributes, and span attributes.",
+      "mutates_source_telemetry": false,
+      "primary_for": ["service.logical", "container.instance"],
+      "secondary_for": ["k8s.pod", "k8s.node", "compute.machine", "compute.vm"],
+      "relationship_evidence": ["implements", "depends_on", "observed_by"],
+      "limitations": [
+        "Only proves compute entities when applications already emit useful resource or span attributes.",
+        "Trace IDs, pod UIDs, container IDs, and service instance IDs are high-cardinality evidence only."
+      ]
+    },
+    {
+      "name": "kubernetes_state",
+      "description": "Kubernetes object state from watches, snapshots, or equivalent state feeds.",
+      "mutates_source_telemetry": false,
+      "primary_for": ["k8s.node", "k8s.pod", "k8s.deployment", "k8s.statefulset", "k8s.replicaset"],
+      "relationship_evidence": ["runs_on", "owned_by", "manages", "member_of", "contains"],
+      "limitations": [
+        "Requires cluster access and RBAC outside this registry.",
+        "Object state does not prove application service dependencies by itself."
+      ]
+    },
+    {
+      "name": "host_cloud_metadata",
+      "description": "Host and cloud identity evidence from telemetry resources, cloud APIs, or inventory sync.",
+      "mutates_source_telemetry": false,
+      "primary_for": ["compute.machine", "compute.vm", "compute.server"],
+      "relationship_evidence": ["runs_on", "member_of", "observed_by"],
+      "limitations": [
+        "Provider-specific identifiers must be scoped by account, region, and provider to avoid collisions."
+      ]
+    },
+    {
+      "name": "servicegraph_metrics",
+      "description": "Dependency metrics generated from traces by the OpenTelemetry servicegraph connector.",
+      "mutates_source_telemetry": false,
+      "primary_for": [],
+      "secondary_for": ["service.logical"],
+      "relationship_evidence": ["depends_on"],
+      "limitations": [
+        "Stateful connector; scaled deployments require traceID stickiness.",
+        "Produces dependency metrics, not rich asset inventory.",
+        "Avoid high-cardinality dimensions such as pod UID, pod name, container ID, trace ID, and service instance ID."
+      ]
+    }
+  ],
+  "source_priority": [
+    "kubernetes_state wins for Kubernetes ownership and scheduling.",
+    "host_cloud_metadata wins for machine, VM, and server identity.",
+    "opentelemetry_trace wins for runtime service identity.",
+    "servicegraph_metrics contributes dependency evidence only."
+  ]
+}

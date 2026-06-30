@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/metric-alert-contract.schema.json",
+  "title": "MetricAlertContract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_id", "target_interface", "required_evidence_fields", "allowed_dimensions", "rollup_path"],
+  "properties": {
+    "contract_id": {"type": "string", "minLength": 1},
+    "target_interface": {"type": "string", "minLength": 1},
+    "metric_names": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "required_evidence_fields": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "allowed_dimensions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "entity_evidence_only_fields": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "rollup_path": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}
