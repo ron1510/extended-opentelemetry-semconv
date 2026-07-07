@@ -1,42 +1,56 @@
-# Compute Asset Semantic Registry
+# Extended OpenTelemetry Semantic Conventions
 
-This repository defines a raw-preserving semantic registry for deriving compute
-assets, asset interfaces, and relationships from telemetry and infrastructure
-state evidence.
+This repository is a POC for OpenTelemetry-compatible entity interfaces.
 
-The design intentionally does not rewrite incoming telemetry into internal
-attribute names. Instead, it records what observed fields mean, which asset
-interfaces they can identify, and which graph edges they support.
+The core idea is to keep OpenTelemetry attribute names and model layout, then
+compose those attributes into semantic entity interfaces such as Kubernetes
+clusters, namespaces, nodes, pods, and containers.
 
-## Contents
+## Layout
 
-- `registry/interfaces.yaml` defines compute asset interface signatures.
-- `registry/relationships.yaml` defines graph edge semantics.
-- `registry/evidence-sources.yaml` defines supported evidence source contracts.
-- `schemas/` contains JSON Schemas for resolved evidence, entities,
-  relationships, and future metric/alert contracts.
-- `examples/` contains representative evidence records.
-- `collector/servicegraph-optional.yaml` shows an optional raw-preserving
-  OpenTelemetry Collector setup for dependency evidence.
-- `scripts/validate_registry.py` validates the registry and examples with only
-  the Python standard library.
+- `model/k8s/registry.yaml` defines OTel-style attribute groups.
+- `model/k8s/entities.yaml` defines OTel-style entity groups.
+- `upstream/otel-semconv/` contains pinned upstream-like model snapshots.
+- `upstream/otel-semconv.lock.json` records the pinned snapshot hashes.
+- `src/extended_otel_semconv/` contains the Python package.
+- `tests/` contains example-based and property-based tests.
 
-## Core Rules
+## Python API
 
-1. Raw telemetry is preserved.
-2. Asset evidence is derived separately from telemetry and infrastructure state.
-3. Existing OpenTelemetry Semantic Convention attributes are preferred.
-4. Internal extension semantics fill gaps rather than replacing upstream names.
-5. High-cardinality identifiers are valid entity evidence, but not metric
-   dimensions.
-6. Service graph output is dependency evidence, not the primary inventory source.
+The public API exposes semantic Pydantic models, not generic bags of
+attributes:
+
+- `K8sCluster`
+- `K8sNamespace`
+- `K8sNode`
+- `K8sPod`
+- `K8sContainer`
+
+Use `entities_from_attributes(...)` to parse raw OTel attributes and create
+every supported entity independently.
+
+## Upstream Sync
+
+The installed `opentelemetry-semantic-conventions` package is a dependency and
+is used for compatibility checks. The package does not currently expose OTel
+model YAML files, so closed-network sync must use local source artifacts,
+checked-in snapshots, or internal packages that include `model/**/*.yaml`.
+
+Drift between two local model snapshots can be checked with:
+
+```powershell
+C:\Users\ronba\AppData\Local\Python\bin\python.exe scripts\check_semconv_drift.py old\model new\model
+```
+
+Inspect the installed semconv package with:
+
+```powershell
+C:\Users\ronba\AppData\Local\Python\bin\python.exe scripts\inspect_semconv_package.py
+```
 
 ## Validate
 
 ```powershell
-python scripts\validate_registry.py
+C:\Users\ronba\AppData\Local\Python\bin\python.exe scripts\validate_registry.py
+C:\Users\ronba\AppData\Local\Python\bin\python.exe -m pytest
 ```
-
-The validator checks that registry files are valid JSON/YAML-subset documents,
-that interface and relationship examples point at known types, and that example
-records conform to the required top-level contract shape.
