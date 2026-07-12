@@ -1,18 +1,9 @@
 {
   "source": {
-    "kind": "checked_in_snapshot",
-    "name": "otel-semconv-poc-k8s",
-    "version": "poc-k8s",
-    "artifact": "upstream/otel-semconv/poc-k8s"
-  },
-  "files": [
-    {
-      "path": "model/k8s/registry.yaml",
-      "sha256": "7efc5d3c7c2c401552e3e2f5fbd1e640a8841409ca0774c48f02cc51d7c2cd96"
-    },
-    {
-      "path": "model/k8s/entities.yaml",
-      "sha256": "a9f9792fb91ced8d2677e803198b5611e8da847d09c6ddf58e05b7179ea585e2"
-    }
-  ]
+    "kind": "github_release_source_archive",
+    "repository": "open-telemetry/semantic-conventions",
+    "version": "v1.43.0",
+    "url": "https://github.com/open-telemetry/semantic-conventions/archive/refs/tags/v1.43.0.zip",
+    "artifact": "upstream/otel-semconv/v1.43.0/model"
+  }
 }

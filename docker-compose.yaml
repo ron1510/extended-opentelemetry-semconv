@@ -1,0 +1,39 @@
+services:
+  graph:
+    build: .
+    command: uvicorn extended_otel_semconv.graph.app:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    ports:
+      - "8000:8000"
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.151.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on:
+      graph:
+        condition: service_healthy
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./deploy/local/otelcol.yaml:/etc/otelcol/config.yaml:ro
+
+  demo:
+    build: .
+    command: python scripts/demo_telemetry.py
+    depends_on:
+      - otelcol
+    environment:
+      OTLP_HTTP_ENDPOINT: http://otelcol:4318/v1/traces
+      DEMO_INTERVAL_SECONDS: "5"

@@ -6,12 +6,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from extended_otel_semconv.registry.validation import validate_model_files  # noqa: E402
+from extended_otel_semconv.registry.validation import validate_extension_model  # noqa: E402
 
 
 def main() -> int:
-    validate_model_files(ROOT / "model" / "k8s" / "registry.yaml", ROOT / "model" / "k8s" / "entities.yaml")
-    print("OTel-style registry validation passed")
+    validate_extension_model(
+        ROOT / "upstream" / "otel-semconv" / "v1.43.0" / "model",
+        ROOT / "model" / "extensions",
+    )
+    print("OTel extension registry validation passed")
     return 0
 
 

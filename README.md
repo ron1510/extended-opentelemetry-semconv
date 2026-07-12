@@ -1,56 +1,133 @@
 # Extended OpenTelemetry Semantic Conventions
 
-This repository is a POC for OpenTelemetry-compatible entity interfaces.
+This project extends the OpenTelemetry semantic convention entity registry without
+redefining entities that OpenTelemetry already owns.
 
-The core idea is to keep OpenTelemetry attribute names and model layout, then
-compose those attributes into semantic entity interfaces such as Kubernetes
-clusters, namespaces, nodes, pods, and containers.
+The project has three jobs:
 
-## Layout
+- load a pinned upstream OpenTelemetry semantic convention model snapshot;
+- define only custom extension entities and graph relationships;
+- ingest telemetry and materialize a live entity graph from the merged model.
 
-- `model/k8s/registry.yaml` defines OTel-style attribute groups.
-- `model/k8s/entities.yaml` defines OTel-style entity groups.
-- `upstream/otel-semconv/` contains pinned upstream-like model snapshots.
-- `upstream/otel-semconv.lock.json` records the pinned snapshot hashes.
-- `src/extended_otel_semconv/` contains the Python package.
-- `tests/` contains example-based and property-based tests.
+The graph engine accepts raw OTLP traces and OpenTelemetry Collector
+`service_graph` connector metrics. Raw traces create observed entities directly.
+`service_graph` metrics are treated as graph reinforcement events: they create
+the client/server entities available in metric dimensions, reinforce structural
+relationships, and create dependency edges such as `calls`, `publishes_to`, and
+`queries`.
+
+## Current Status
+
+This is an in-memory graph engine and registry extension toolkit. It is built to
+make the model boundaries clear before adding durable storage or a richer query
+API.
+
+What is implemented:
+
+- upstream OpenTelemetry model loading from `upstream/otel-semconv/v1.43.0/model`;
+- custom extension model loading from `model/extensions`;
+- generated Pydantic entity classes for identifiable upstream and extension entities;
+- registry-defined graph relationships;
+- OTLP trace ingestion;
+- OTLP metric ingestion for Collector `service_graph` output;
+- graph TTL pruning;
+- node and edge observation counts;
+- node and edge source attribution from `trace` and `service_graph`;
+- generated Collector config dimensions from the merged registry.
+
+## Repository Layout
+
+- `upstream/otel-semconv/v1.43.0/model/` is the pinned upstream OpenTelemetry model snapshot.
+- `upstream/otel-semconv.lock.json` records the pinned upstream source.
+- `model/extensions/` contains extension attributes, entities, and relationships.
+- `src/extended_otel_semconv/generated/` contains committed generated entity classes.
+- `src/extended_otel_semconv/graph/` contains OTLP parsing and graph materialization.
+- `deploy/local/otelcol.yaml` is generated from the merged registry.
+- `scripts/` contains validation, generation, and demo helpers.
+- `tests/` covers registry validation, generation freshness, entity parsing, and graph ingestion.
+
+## Architecture Docs
+
+- [Architecture](docs/architecture.md)
+- [Registry Extensions](docs/registry-extensions.md)
+- [Graph Engine](docs/graph-engine.md)
+- [Collector Pipeline](docs/collector-pipeline.md)
+- [Development](docs/development.md)
+
+## Generate
+
+Regenerate committed artifacts after changing `model/extensions/` or the
+upstream snapshot:
+
+```powershell
+python scripts\generate_entities.py
+python scripts\generate_collector_config.py
+```
+
+Check that generated files are current:
+
+```powershell
+python scripts\generate_entities.py --check
+python scripts\generate_collector_config.py --check
+```
+
+The entity generator emits runtime classes only for entities with explicit
+`role: identifying` attributes. Entities without identifying refs remain in the
+registry but are skipped by the runtime parser.
 
 ## Python API
 
-The public API exposes semantic Pydantic models, not generic bags of
-attributes:
+Use `entities_from_attributes(...)` to parse raw OpenTelemetry attributes and
+create every generated entity whose identifying attributes are present.
 
-- `K8sCluster`
-- `K8sNamespace`
-- `K8sNode`
-- `K8sPod`
-- `K8sContainer`
+```python
+from extended_otel_semconv import entities_from_attributes
 
-Use `entities_from_attributes(...)` to parse raw OTel attributes and create
-every supported entity independently.
+entities = entities_from_attributes(
+    {
+        "service.name": "checkout-api",
+        "service.namespace": "payments",
+        "k8s.pod.uid": "4e2b0bb9-4700-4f20-bb6f-c6e2b5975c6b",
+        "http.request.method": "POST",
+        "http.route": "/checkout/{cart_id}",
+    }
+)
 
-## Upstream Sync
-
-The installed `opentelemetry-semantic-conventions` package is a dependency and
-is used for compatibility checks. The package does not currently expose OTel
-model YAML files, so closed-network sync must use local source artifacts,
-checked-in snapshots, or internal packages that include `model/**/*.yaml`.
-
-Drift between two local model snapshots can be checked with:
-
-```powershell
-C:\Users\ronba\AppData\Local\Python\bin\python.exe scripts\check_semconv_drift.py old\model new\model
+for entity in entities:
+    print(entity.entity_type, entity.entity_id)
 ```
 
-Inspect the installed semconv package with:
+## Live Graph Demo
+
+Run the local stack:
 
 ```powershell
-C:\Users\ronba\AppData\Local\Python\bin\python.exe scripts\inspect_semconv_package.py
+docker compose up --build
+```
+
+The stack starts:
+
+- `graph`: FastAPI entity graph service on `http://localhost:8000`;
+- `otelcol`: OpenTelemetry Collector receiving OTLP on `4317` and `4318`;
+- `demo`: sample trace generator that sends OTLP HTTP traces through the collector.
+
+Inspect the graph:
+
+```powershell
+curl http://localhost:8000/health
+curl http://localhost:8000/entities
+curl http://localhost:8000/edges
+curl http://localhost:8000/graph
 ```
 
 ## Validate
 
 ```powershell
-C:\Users\ronba\AppData\Local\Python\bin\python.exe scripts\validate_registry.py
-C:\Users\ronba\AppData\Local\Python\bin\python.exe -m pytest
+python scripts\validate_registry.py
+python scripts\generate_entities.py --check
+python scripts\generate_collector_config.py --check
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+docker compose config
 ```
