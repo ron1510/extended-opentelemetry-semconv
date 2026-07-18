@@ -1,3 +1,5 @@
+"""Generate committed Python entity classes from upstream plus extension models."""
+
 from __future__ import annotations
 
 import argparse

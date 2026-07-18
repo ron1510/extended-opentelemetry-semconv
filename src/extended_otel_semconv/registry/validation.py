@@ -1,3 +1,5 @@
+"""Validation for extension registries layered over a pinned upstream OTel model."""
+
 from __future__ import annotations
 
 from pathlib import Path

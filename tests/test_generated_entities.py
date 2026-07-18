@@ -38,3 +38,14 @@ def test_collector_config_is_current() -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_postgres_schema_is_current() -> None:
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_postgres_schema.py", "--check"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr

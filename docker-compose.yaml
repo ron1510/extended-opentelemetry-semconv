@@ -1,37 +1,60 @@
 services:
-  graph:
-    build: .
-    command: uvicorn extended_otel_semconv.graph.app:app --host 0.0.0.0 --port 8000
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
+  kafka:
+    image: redpandadata/redpanda:v24.3.5
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://kafka:9092
     ports:
-      - "8000:8000"
+      - "9092:9092"
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: entity_graph
+      POSTGRES_USER: entity_graph
+      POSTGRES_PASSWORD: entity_graph
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./deploy/postgres/001_graph_schema.sql:/docker-entrypoint-initdb.d/001_graph_schema.sql:ro
 
   otelcol:
-    image: otel/opentelemetry-collector-contrib:0.151.0
+    image: otel/opentelemetry-collector-contrib:0.156.0
     command: ["--config=/etc/otelcol/config.yaml"]
     depends_on:
-      graph:
-        condition: service_healthy
+      - kafka
     ports:
       - "4317:4317"
       - "4318:4318"
     volumes:
       - ./deploy/local/otelcol.yaml:/etc/otelcol/config.yaml:ro
 
+  graph-loader:
+    build: .
+    command: python -m extended_otel_semconv.services.graph_loader.cli
+    depends_on:
+      - kafka
+      - postgres
+      - otelcol
+    environment:
+      GRAPH_POSTGRES_URL: postgresql+psycopg://entity_graph:entity_graph@postgres:5432/entity_graph
+      GRAPH_LOADER_INPUT: kafka-otlp-json-metrics
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      GRAPH_KAFKA_TOPIC: otel.servicegraph.metrics
+      GRAPH_KAFKA_GROUP_ID: entity-graph-loader
+      GRAPH_KAFKA_BATCH_SIZE: "1000"
+
   demo:
     build: .
-    command: python scripts/demo_telemetry.py
+    command: python -m extended_otel_semconv_devtools.graph_loader.demo
     depends_on:
       - otelcol
     environment:

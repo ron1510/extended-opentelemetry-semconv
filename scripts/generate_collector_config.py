@@ -1,3 +1,5 @@
+"""Generate the single local/prod-shaped Collector config from the merged registry."""
+
 from __future__ import annotations
 
 import argparse
@@ -55,9 +57,14 @@ def render_collector_config() -> str:
                 "limit_percentage": 80,
                 "spike_limit_percentage": 20,
             },
-            "batch": {
+            "batch/traces": {
                 "timeout": "1s",
                 "send_batch_size": 256,
+            },
+            "batch/servicegraph_metrics": {
+                "timeout": "1s",
+                "send_batch_size": 1,
+                "send_batch_max_size": 1,
             },
         },
         "connectors": {
@@ -73,8 +80,24 @@ def render_collector_config() -> str:
             },
         },
         "exporters": {
-            "otlp_http/entitygraph": {
-                "endpoint": "http://graph:8000",
+            "kafka/servicegraph_metrics": {
+                "brokers": ["kafka:9092"],
+                "metrics": {
+                    "topic": "otel.servicegraph.metrics",
+                    "encoding": "otlp_json",
+                },
+                "producer": {
+                    "compression": "zstd",
+                },
+                "sending_queue": {
+                    "enabled": True,
+                    "sizer": "items",
+                    "queue_size": 100000,
+                },
+                "retry_on_failure": {
+                    "enabled": True,
+                    "max_elapsed_time": "0s",
+                },
             },
         },
         "service": {
@@ -82,13 +105,13 @@ def render_collector_config() -> str:
             "pipelines": {
                 "traces": {
                     "receivers": ["otlp"],
-                    "processors": ["memory_limiter", "batch"],
-                    "exporters": ["otlp_http/entitygraph", "service_graph"],
+                    "processors": ["memory_limiter", "batch/traces"],
+                    "exporters": ["service_graph"],
                 },
                 "metrics/servicegraph": {
                     "receivers": ["service_graph"],
-                    "processors": ["memory_limiter", "batch"],
-                    "exporters": ["otlp_http/entitygraph"],
+                    "processors": ["memory_limiter", "batch/servicegraph_metrics"],
+                    "exporters": ["kafka/servicegraph_metrics"],
                 },
             },
         },

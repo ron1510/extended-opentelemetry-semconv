@@ -4,12 +4,19 @@ The graph engine turns telemetry into a live entity graph.
 
 The important files are:
 
-- `graph/model.py`: serializable node, edge, snapshot, and source-signal models;
-- `graph/evidence.py`: pure functions for creating and reinforcing nodes and edges;
+- `graph/model.py`: shared source-signal type aliases;
+- `graph/observation.py`: normalized entity and edge observation models;
 - `graph/relationships.py`: pure functions for expanding registry relationships into edge candidates;
-- `graph/store.py`: stateful in-memory graph store with locking and TTL pruning;
+- `graph/service_graph.py`: service graph datapoint to graph-observation formatting;
+- `graph/postgres_schema.py`: table-per-entity SQLAlchemy metadata and DDL generation;
+- `graph/postgres_loader.py`: SQLAlchemy Core upsert statements for observations;
 - `graph/otlp.py`: OTLP trace parsing;
 - `graph/metrics.py`: OTLP metric parsing for service graph metrics.
+
+Generated entity classes live under `src/extended_otel_semconv/generated`. The
+graph engine consumes those generated classes through
+`entities_from_attributes(...)`; it should not hardcode entity-specific parsing
+rules.
 
 ## Ingestion Sources
 
@@ -87,7 +94,26 @@ k8s.pod -> runs -> service
 This keeps relationship creation explicit while avoiding hardcoded topology in
 Python code.
 
-## TTL
+## Persistence
 
-The graph store prunes nodes and edges whose `last_seen` is older than the
-configured TTL. The default is 900 seconds.
+The project writes to Postgres as the source of truth. Entity tables are
+generated per entity type from SQLAlchemy metadata built from the merged
+registry. Loader code uses SQLAlchemy Core PostgreSQL upserts against that same
+metadata, so DDL and writes share one schema model. The loader records
+`observation_id` values before upsert, so replayed Kafka messages are skipped
+instead of counted twice.
+
+Staleness is represented by `last_seen`; downstream organizational systems can
+decide how to project or hide stale data in graph caches.
+
+## Tests
+
+Graph behavior is covered by:
+
+- `tests/test_graph_relationships.py` for pure relationship expansion;
+- `tests/test_graph_ingest.py` for OTLP parsing and service graph observation formatting;
+- `tests/test_graph_formatter.py` for OTLP JSON log formatting;
+- `tests/test_postgres_schema.py` for generated table-per-entity schema and SQLAlchemy upserts.
+
+The tests build OTLP protobuf requests directly. They do not require a running
+Collector.

@@ -6,6 +6,10 @@ Use extension files for things OpenTelemetry does not already define. If an
 entity or attribute exists in the upstream OpenTelemetry snapshot, reference it;
 do not redefine it.
 
+When the upstream snapshot changes, re-check every extension against the new
+OpenTelemetry model. If upstream now owns an entity or attribute that this repo
+previously extended, delete the extension definition and use upstream instead.
+
 ## Attributes
 
 Attributes are declared in `attribute_group` entries.
@@ -95,3 +99,8 @@ python scripts\generate_entities.py
 python scripts\generate_collector_config.py
 python -m pytest
 ```
+
+## Related Runbooks
+
+- [Upstream Semconv Upgrade Runbook](upstream-semconv-upgrade-runbook.md)
+- [Test Environment](test-environment.md)

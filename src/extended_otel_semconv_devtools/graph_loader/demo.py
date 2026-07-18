@@ -1,11 +1,13 @@
+"""Emit synthetic OTLP traces for the local Collector and graph demo."""
+
 from __future__ import annotations
 
 import os
 import time
+import urllib.request
 import uuid
 from typing import Any
 
-import httpx
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 from opentelemetry.proto.resource.v1.resource_pb2 import Resource
 from opentelemetry.proto.trace.v1.trace_pb2 import Span
@@ -17,14 +19,15 @@ def main() -> int:
     while True:
         request = build_demo_request()
         try:
-            response = httpx.post(
+            http_request = urllib.request.Request(
                 endpoint,
-                content=request.SerializeToString(),
+                data=request.SerializeToString(),
                 headers={"content-type": "application/x-protobuf"},
-                timeout=10,
+                method="POST",
             )
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
+            with urllib.request.urlopen(http_request, timeout=10) as response:
+                response.read()
+        except OSError as exc:
             print(f"failed to send demo trace to {endpoint}: {exc}", flush=True)
         else:
             print(f"sent demo trace to {endpoint}", flush=True)

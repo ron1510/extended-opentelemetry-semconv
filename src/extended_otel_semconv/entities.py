@@ -1,3 +1,5 @@
+"""Runtime primitives shared by generated semantic entity classes."""
+
 from __future__ import annotations
 
 from typing import Any, ClassVar, Mapping

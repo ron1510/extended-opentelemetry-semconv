@@ -1,3 +1,5 @@
+"""OTLP trace parsing helpers used by the graph ingestion API and tests."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable

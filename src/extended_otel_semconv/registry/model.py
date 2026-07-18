@@ -1,3 +1,5 @@
+"""Pydantic models for the subset of OTel registry YAML this project consumes."""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,3 +1,5 @@
+"""Pure relationship expansion from registry definitions and observed entities."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

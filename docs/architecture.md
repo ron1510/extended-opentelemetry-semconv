@@ -4,7 +4,8 @@ The project is built around a strict ownership boundary.
 
 OpenTelemetry owns upstream semantic convention entities and attributes. This
 repository owns only extension entities, extension attributes, relationship
-definitions, runtime graph materialization, and generated local artifacts.
+definitions, graph-observation normalization, SQLAlchemy persistence helpers,
+and generated local artifacts.
 
 ## Model Flow
 
@@ -18,26 +19,37 @@ definitions, runtime graph materialization, and generated local artifacts.
 The upstream snapshot is intentionally checked in. The runtime does not fetch
 OpenTelemetry models from the network.
 
+Use [Upstream Semconv Upgrade Runbook](upstream-semconv-upgrade-runbook.md) when
+changing this pinned version. A version bump is a model migration, not only a
+dependency update.
+
 ## Runtime Flow
 
 1. Applications send OTLP traces to the local Collector.
-2. The Collector sends raw traces to the graph service.
-3. The Collector `service_graph` connector derives request dependency metrics.
-4. The Collector sends those service graph metrics to the graph service.
-5. The graph service parses trace and metric attributes into semantic entities.
-6. Registry relationship definitions turn co-observed entities into structural edges.
-7. Service graph metrics create service dependency edges.
-8. Nodes and edges are kept fresh by observation timestamps and TTL pruning.
+2. The Collector `service_graph` connector derives request dependency metrics.
+3. The Collector Kafka exporter writes service graph metrics to Kafka as OTLP JSON.
+4. The graph loader consumes those metrics and writes normalized graph observations to Postgres.
+5. The formatter turns each datapoint log into normalized graph observations.
+6. The loader writes observations into table-per-entity Postgres tables through
+   SQLAlchemy Core statements generated from the merged registry.
 
 ## Ownership Boundary
 
 This repository configures the OpenTelemetry Collector rather than replacing it.
-The Collector remains responsible for OTLP receiving and service dependency
-extraction. The Python graph engine is responsible for interpreting the resulting
-telemetry as a typed entity graph.
+The Collector remains responsible for OTLP receiving, service dependency
+extraction, datapoint-to-log conversion, and Kafka export. Python code is
+responsible for registry-aware observation formatting and SQLAlchemy persistence
+helpers.
 
 ## Runtime State
 
-The current graph store is in memory. It is useful for model correctness,
-ingestion behavior, and local development. A durable backend can be added behind
-the same graph model later without changing the registry contract.
+Postgres is the source-of-truth storage target. It uses one generated table per
+entity type plus shared edge, idempotency, and error tables. Organization-owned
+systems can project this data into graph caches outside this repository.
+
+## Validation Surface
+
+Architecture-level changes should pass both validation layers:
+
+- Python checks described in [Test Environment](test-environment.md);
+- Docker Compose runtime validation for Collector, Kafka, and Postgres wiring.

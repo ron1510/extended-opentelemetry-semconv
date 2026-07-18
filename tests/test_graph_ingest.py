@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import gzip
 from pathlib import Path
 from typing import Any
 
-from fastapi.testclient import TestClient
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue
@@ -12,10 +10,10 @@ from opentelemetry.proto.metrics.v1.metrics_pb2 import AGGREGATION_TEMPORALITY_C
 from opentelemetry.proto.resource.v1.resource_pb2 import Resource
 from opentelemetry.proto.trace.v1.trace_pb2 import Span
 
-from extended_otel_semconv.graph.app import create_app
 from extended_otel_semconv.graph.metrics import SERVICE_GRAPH_REQUEST_TOTAL, parse_metrics_request
+from extended_otel_semconv.graph.observation import EdgeObservation, EntityObservation
 from extended_otel_semconv.graph.otlp import any_value_to_python, parse_trace_request
-from extended_otel_semconv.graph.store import EntityGraph
+from extended_otel_semconv.graph.service_graph import observations_from_service_graph_datapoint
 from extended_otel_semconv.registry.model import AttributeDefinition
 from extended_otel_semconv.registry.validation import load_model_registry
 
@@ -49,67 +47,13 @@ def test_parse_trace_request_merges_resource_and_span_attributes() -> None:
     assert records[0].attributes["http.request.method"] == "GET"
 
 
-def test_graph_creates_server_endpoint_only() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0]))
-    request = _trace_request(
-        resource_attributes={
-            "service.name": "checkout-api",
-            "service.namespace": "payments",
-        },
-        spans=[
-            _span(
-                span_id=b"\x01" * 8,
-                kind=Span.SPAN_KIND_CLIENT,
-                attributes={"http.request.method": "POST", "http.route": "/checkout/{cart_id}"},
-            )
-        ],
-    )
-
-    graph.ingest_spans(parse_trace_request(request.SerializeToString()))
-
-    assert "service:checkout-api" in {node.id for node in graph.snapshot().entities}
-    assert not any(node.type == "app.endpoint" for node in graph.snapshot().entities)
-    service = next(node for node in graph.snapshot().entities if node.id == "service:checkout-api")
-    assert service.sources == {"trace": 1}
-
-
-def test_graph_does_not_infer_dependency_edges_from_raw_traces() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0]))
-    trace_id = b"\x09" * 16
-    parent_span_id = b"\x01" * 8
-    child_span_id = b"\x02" * 8
-
-    request = _trace_request(
-        trace_id=trace_id,
-        resource_attributes={"service.name": "frontend", "service.namespace": "web"},
-        spans=[
-            _span(
-                span_id=parent_span_id,
-                kind=Span.SPAN_KIND_CLIENT,
-                attributes={"http.request.method": "POST", "http.route": "/checkout/{cart_id}"},
-            ),
-            _span(
-                span_id=child_span_id,
-                parent_span_id=parent_span_id,
-                kind=Span.SPAN_KIND_SERVER,
-                attributes={"http.request.method": "POST", "http.route": "/checkout/{cart_id}"},
-            )
-        ],
-    )
-
-    graph.ingest_spans(parse_trace_request(request.SerializeToString()))
-
-    edges = graph.snapshot().edges
-    assert not any(edge.type == "calls" for edge in edges)
-
-
 def test_parse_service_graph_metric_points() -> None:
     request = _metrics_request(
         SERVICE_GRAPH_REQUEST_TOTAL,
         {
             "client": "frontend",
             "server": "checkout-api",
-            "connection_type": "",
+            "connection_type": "http",
             "server_http.route": "/checkout/{cart_id}",
         },
         value=3,
@@ -123,269 +67,99 @@ def test_parse_service_graph_metric_points() -> None:
     assert points[0].value == 3
 
 
-def test_service_graph_metric_creates_dependency_edge_between_observed_services() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0, 101.0]))
-    graph.ingest_spans(
-        parse_trace_request(
-            _trace_request(
-                resource_attributes={"service.name": "frontend", "service.namespace": "web"},
-                spans=[_span(span_id=b"\x01" * 8, kind=Span.SPAN_KIND_CLIENT, attributes={})],
-            ).SerializeToString()
-        )
-    )
-    graph.ingest_spans(
-        parse_trace_request(
-            _trace_request(
-                resource_attributes={"service.name": "checkout-api", "service.namespace": "payments"},
-                spans=[
-                    _span(
-                        span_id=b"\x02" * 8,
-                        kind=Span.SPAN_KIND_SERVER,
-                        attributes={"http.request.method": "POST", "http.route": "/checkout/{cart_id}"},
-                    )
-                ],
-            ).SerializeToString()
-        )
+def test_service_graph_datapoint_formats_entity_and_edge_observations() -> None:
+    observations = observations_from_service_graph_datapoint(
+        metric_name=SERVICE_GRAPH_REQUEST_TOTAL,
+        attributes={
+            "client": "frontend",
+            "server": "checkout-api",
+            "connection_type": "http",
+            "client_service.namespace": "web",
+            "client_k8s.namespace.name": "frontend",
+            "client_k8s.pod.uid": "frontend-pod-demo",
+            "server_service.namespace": "payments",
+            "server_service.instance.id": "checkout/demo",
+            "server_k8s.namespace.name": "checkout",
+            "server_k8s.pod.uid": "checkout-pod-demo",
+            "server_http.request.method": "POST",
+            "server_http.route": "/checkout/{cart_id}",
+        },
+        value=7,
+        observed_at_unix_nano=1784215260000000000,
+        relationships=_relationships(),
     )
 
-    graph.ingest_metric_points(
-        parse_metrics_request(
-            _metrics_request(
-                SERVICE_GRAPH_REQUEST_TOTAL,
-                {
-                    "client": "frontend",
-                    "server": "checkout-api",
-                    "connection_type": "",
-                    "server_service.namespace": "payments",
-                    "server_http.request.method": "POST",
-                    "server_http.route": "/checkout/{cart_id}",
-                },
-                value=7,
-            ).SerializeToString()
-        )
-    )
+    entities = [observation for observation in observations if isinstance(observation, EntityObservation)]
+    edges = [observation for observation in observations if isinstance(observation, EdgeObservation)]
+    entity_ids = {observation.entity.id for observation in entities}
+    edge_keys = {(observation.edge.source, observation.edge.target, observation.edge.type) for observation in edges}
 
-    edge = next(edge for edge in graph.snapshot().edges if edge.type == "calls")
-    assert edge.source == "service:frontend"
-    assert edge.target == "service:checkout-api"
-    assert edge.sources == {"service_graph": 1}
-    assert edge.attributes["service_graph.request.total"] == 7
-    assert edge.attributes["target_endpoint.id"] == "app.endpoint:checkout-api:payments:POST:%2Fcheckout%2F%7Bcart_id%7D"
+    assert "service:frontend" in entity_ids
+    assert "service:checkout-api" in entity_ids
+    assert "app.endpoint:checkout-api:payments:POST:%2Fcheckout%2F%7Bcart_id%7D" in entity_ids
+    assert ("service:frontend", "service:checkout-api", "calls") in edge_keys
+    assert ("k8s.pod:checkout-pod-demo", "service:checkout-api", "runs") in edge_keys
+    assert all(observation.source_signal == "service_graph" for observation in observations)
 
 
-def test_service_graph_metric_materializes_entities_from_prefixed_dimensions() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0]))
-
-    graph.ingest_metric_points(
-        parse_metrics_request(
-            _metrics_request(
-                SERVICE_GRAPH_REQUEST_TOTAL,
-                {
-                    "client": "frontend",
-                    "server": "checkout-api",
-                    "connection_type": "",
-                    "client_service.namespace": "web",
-                    "client_k8s.namespace.name": "frontend",
-                    "client_k8s.pod.uid": "frontend-pod-demo",
-                    "server_service.namespace": "payments",
-                    "server_service.instance.id": "checkout/demo",
-                    "server_k8s.namespace.name": "checkout",
-                    "server_k8s.pod.uid": "checkout-pod-demo",
-                    "server_http.request.method": "POST",
-                    "server_http.route": "/checkout/{cart_id}",
-                },
-                value=1,
-            ).SerializeToString()
-        )
-    )
-
-    snapshot = graph.snapshot()
-    node_ids = {node.id for node in snapshot.entities}
-    assert "service:frontend" in node_ids
-    assert "service.namespace:web" in node_ids
-    assert "k8s.pod:checkout-pod-demo" in node_ids
-    assert "service.instance:checkout%2Fdemo" in node_ids
-    assert "app.endpoint:checkout-api:payments:POST:%2Fcheckout%2F%7Bcart_id%7D" in node_ids
-    assert all(node.attributes for node in snapshot.entities)
-    assert next(node for node in snapshot.entities if node.id == "service:frontend").sources == {"service_graph": 1}
-    assert any(edge.type == "runs" and edge.source == "k8s.pod:checkout-pod-demo" and edge.target == "service:checkout-api" for edge in snapshot.edges)
-    assert any(edge.type == "calls" and edge.source == "service:frontend" and edge.target == "service:checkout-api" for edge in snapshot.edges)
-
-
-def test_service_graph_metric_can_reinforce_all_generated_server_entities() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0]))
+def test_service_graph_datapoint_can_reinforce_all_generated_server_entities() -> None:
     raw_attributes = _maximal_entity_attributes(service_name="max-server")
     metric_attributes = {
         "client": "max-client",
         "server": "max-server",
-        "connection_type": "",
+        "connection_type": "http",
         **{f"client_{key}": value for key, value in _maximal_entity_attributes(service_name="max-client").items()},
         **{f"server_{key}": value for key, value in raw_attributes.items()},
     }
 
-    graph.ingest_metric_points(
-        parse_metrics_request(
-            _metrics_request(SERVICE_GRAPH_REQUEST_TOTAL, metric_attributes, value=1).SerializeToString()
-        )
+    observations = observations_from_service_graph_datapoint(
+        metric_name=SERVICE_GRAPH_REQUEST_TOTAL,
+        attributes=metric_attributes,
+        value=1,
+        observed_at_unix_nano=1784215260000000000,
+        relationships=_relationships(),
     )
 
-    snapshot = graph.snapshot()
-    node_types = {node.type for node in snapshot.entities}
-    expected_server_types = _expected_identifiable_entity_types()
-    assert expected_server_types <= node_types
-    assert "app.endpoint" in node_types
-    edge_keys = {(edge.source, edge.target, edge.type) for edge in snapshot.edges}
+    entity_types = {
+        observation.entity.type
+        for observation in observations
+        if isinstance(observation, EntityObservation)
+    }
+    edge_keys = {
+        (observation.edge.source, observation.edge.target, observation.edge.type)
+        for observation in observations
+        if isinstance(observation, EdgeObservation)
+    }
+
+    assert _expected_identifiable_entity_types() <= entity_types
     assert ("service:max-client", "service:max-server", "calls") in edge_keys
     assert ("service:max-server", "service.instance:max-server%2Finstance", "contains") in edge_keys
     assert ("k8s.pod:max-server-pod-uid", "service.instance:max-server%2Finstance", "runs") in edge_keys
-    assert any(edge.type == "instrumented_by" and edge.source == "service:max-server" for edge in snapshot.edges)
-    assert any(edge.type == "built_from" and edge.source == "service:max-server" for edge in snapshot.edges)
-    assert len(snapshot.edges) >= 20
 
 
 def test_service_graph_connection_types_map_to_typed_edges() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0, 101.0, 102.0]))
-    for name in ("producer", "consumer", "database"):
-        graph.ingest_spans(
-            parse_trace_request(
-                _trace_request(
-                    resource_attributes={"service.name": name},
-                    spans=[_span(span_id=name.encode().ljust(8, b"0")[:8], kind=Span.SPAN_KIND_INTERNAL, attributes={})],
-                ).SerializeToString()
-            )
-        )
-
-    graph.ingest_metric_points(
-        parse_metrics_request(
-            _metrics_request(
-                SERVICE_GRAPH_REQUEST_TOTAL,
-                {"client": "producer", "server": "consumer", "connection_type": "messaging_system"},
-                value=2,
-            ).SerializeToString()
-        )
+    messaging_observations = observations_from_service_graph_datapoint(
+        metric_name=SERVICE_GRAPH_REQUEST_TOTAL,
+        attributes={"client": "producer", "server": "consumer", "connection_type": "messaging_system"},
+        value=2,
+        observed_at_unix_nano=1784215260000000000,
+        relationships=_relationships(),
     )
-    graph.ingest_metric_points(
-        parse_metrics_request(
-            _metrics_request(
-                SERVICE_GRAPH_REQUEST_TOTAL,
-                {"client": "producer", "server": "database", "connection_type": "database"},
-                value=2,
-            ).SerializeToString()
-        )
+    database_observations = observations_from_service_graph_datapoint(
+        metric_name=SERVICE_GRAPH_REQUEST_TOTAL,
+        attributes={"client": "producer", "server": "database", "connection_type": "database"},
+        value=2,
+        observed_at_unix_nano=1784215260000000000,
+        relationships=_relationships(),
     )
 
-    edge_types = {edge.type for edge in graph.snapshot().edges}
+    edge_types = {
+        observation.edge.type
+        for observation in (*messaging_observations, *database_observations)
+        if isinstance(observation, EdgeObservation)
+    }
     assert "publishes_to" in edge_types
     assert "queries" in edge_types
-
-
-def test_graph_prunes_stale_entities_and_edges() -> None:
-    graph = EntityGraph(ttl_seconds=10, clock=_clock([100.0, 111.0]))
-    request = _trace_request(
-        resource_attributes={"service.name": "checkout-api", "service.namespace": "payments"},
-        spans=[
-            _span(
-                span_id=b"\x01" * 8,
-                kind=Span.SPAN_KIND_SERVER,
-                attributes={"http.request.method": "GET", "http.route": "/health"},
-            )
-        ],
-    )
-
-    graph.ingest_spans(parse_trace_request(request.SerializeToString()))
-
-    assert graph.snapshot().entities == []
-    assert graph.snapshot().edges == []
-
-
-def test_fastapi_otlp_endpoint_updates_graph() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0, 100.0]))
-    client = TestClient(create_app(graph))
-    request = _trace_request(
-        resource_attributes={"service.name": "checkout-api", "service.namespace": "payments"},
-        spans=[
-            _span(
-                span_id=b"\x01" * 8,
-                kind=Span.SPAN_KIND_SERVER,
-                attributes={"http.request.method": "POST", "http.route": "/checkout/{cart_id}"},
-            )
-        ],
-    )
-
-    response = client.post(
-        "/v1/traces",
-        content=request.SerializeToString(),
-        headers={"content-type": "application/x-protobuf"},
-    )
-
-    assert response.status_code == 200
-    graph_response = client.get("/graph")
-    assert graph_response.status_code == 200
-    assert any(entity["type"] == "app.endpoint" for entity in graph_response.json()["entities"])
-
-
-def test_fastapi_otlp_endpoint_accepts_gzip_encoded_body() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0, 100.0]))
-    client = TestClient(create_app(graph))
-    request = _trace_request(
-        resource_attributes={"service.name": "checkout-api", "service.namespace": "payments"},
-        spans=[
-            _span(
-                span_id=b"\x01" * 8,
-                kind=Span.SPAN_KIND_SERVER,
-                attributes={"http.request.method": "POST", "http.route": "/checkout/{cart_id}"},
-            )
-        ],
-    )
-
-    response = client.post(
-        "/v1/traces",
-        content=gzip.compress(request.SerializeToString()),
-        headers={"content-type": "application/x-protobuf", "content-encoding": "gzip"},
-    )
-
-    assert response.status_code == 200
-    assert any(entity.type == "app.endpoint" for entity in graph.snapshot().entities)
-
-
-def test_fastapi_otlp_endpoint_rejects_invalid_gzip_body() -> None:
-    client = TestClient(create_app(EntityGraph()))
-
-    response = client.post(
-        "/v1/traces",
-        content=b"not-gzip",
-        headers={"content-type": "application/x-protobuf", "content-encoding": "gzip"},
-    )
-
-    assert response.status_code == 400
-
-
-def test_fastapi_otlp_metrics_endpoint_updates_graph() -> None:
-    graph = EntityGraph(ttl_seconds=900, clock=_clock([100.0, 101.0, 102.0]))
-    client = TestClient(create_app(graph))
-    for service_name in ("frontend", "checkout-api"):
-        graph.ingest_spans(
-            parse_trace_request(
-                _trace_request(
-                    resource_attributes={"service.name": service_name},
-                    spans=[_span(span_id=service_name.encode().ljust(8, b"0")[:8], kind=Span.SPAN_KIND_INTERNAL, attributes={})],
-                ).SerializeToString()
-            )
-        )
-    request = _metrics_request(
-        SERVICE_GRAPH_REQUEST_TOTAL,
-        {"client": "frontend", "server": "checkout-api", "connection_type": ""},
-        value=1,
-    )
-
-    response = client.post(
-        "/v1/metrics",
-        content=request.SerializeToString(),
-        headers={"content-type": "application/x-protobuf"},
-    )
-
-    assert response.status_code == 200
-    assert any(edge["type"] == "calls" for edge in client.get("/graph").json()["edges"])
 
 
 def _trace_request(
@@ -472,6 +246,10 @@ def _expected_identifiable_entity_types() -> set[str]:
     }
 
 
+def _relationships():
+    return tuple(load_model_registry(ROOT / "model" / "extensions").relationships_by_id.values())
+
+
 def _merged_registry():
     upstream = load_model_registry(ROOT / "upstream" / "otel-semconv" / "v1.43.0" / "model")
     extension = load_model_registry(ROOT / "model" / "extensions")
@@ -496,14 +274,3 @@ def _example_attribute_value(attribute: AttributeDefinition) -> object:
                 return first_member["id"]
         return {"value": attribute.id}
     return f"{attribute.id}-value"
-
-
-def _clock(values: list[float]):
-    state = {"index": 0}
-
-    def clock() -> float:
-        index = min(state["index"], len(values) - 1)
-        state["index"] += 1
-        return values[index]
-
-    return clock

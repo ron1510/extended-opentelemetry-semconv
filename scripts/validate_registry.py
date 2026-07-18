@@ -1,3 +1,5 @@
+"""Validate extension registry files against the pinned upstream OTel model."""
+
 from __future__ import annotations
 
 import sys

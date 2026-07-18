@@ -7,20 +7,18 @@ The project has three jobs:
 
 - load a pinned upstream OpenTelemetry semantic convention model snapshot;
 - define only custom extension entities and graph relationships;
-- ingest telemetry and materialize a live entity graph from the merged model.
+- normalize telemetry-derived graph observations and persist them from the merged model.
 
-The graph engine accepts raw OTLP traces and OpenTelemetry Collector
-`service_graph` connector metrics. Raw traces create observed entities directly.
-`service_graph` metrics are treated as graph reinforcement events: they create
-the client/server entities available in metric dimensions, reinforce structural
-relationships, and create dependency edges such as `calls`, `publishes_to`, and
-`queries`.
+The runtime path is production-shaped even in local development: traces enter the
+OpenTelemetry Collector, the `service_graph` connector derives dependencies,
+the Collector Kafka exporter writes those service graph metrics as OTLP JSON,
+Kafka buffers those records, and Python loader code turns them into durable
+graph observations.
 
 ## Current Status
 
-This is an in-memory graph engine and registry extension toolkit. It is built to
-make the model boundaries clear before adding durable storage or a richer query
-API.
+This is a registry extension and graph-observation pipeline toolkit. It is built
+around Kafka buffering and table-per-entity Postgres persistence.
 
 What is implemented:
 
@@ -28,11 +26,9 @@ What is implemented:
 - custom extension model loading from `model/extensions`;
 - generated Pydantic entity classes for identifiable upstream and extension entities;
 - registry-defined graph relationships;
-- OTLP trace ingestion;
-- OTLP metric ingestion for Collector `service_graph` output;
-- graph TTL pruning;
-- node and edge observation counts;
-- node and edge source attribution from `trace` and `service_graph`;
+- service_graph metric formatting into entity and edge observations;
+- generated table-per-entity Postgres schema from SQLAlchemy metadata;
+- SQLAlchemy Core upsert statements for graph observations;
 - generated Collector config dimensions from the merged registry.
 
 ## Repository Layout
@@ -41,9 +37,12 @@ What is implemented:
 - `upstream/otel-semconv.lock.json` records the pinned upstream source.
 - `model/extensions/` contains extension attributes, entities, and relationships.
 - `src/extended_otel_semconv/generated/` contains committed generated entity classes.
-- `src/extended_otel_semconv/graph/` contains OTLP parsing and graph materialization.
+- `src/extended_otel_semconv/graph/` contains OTLP parsing, observation formatting, and SQLAlchemy persistence helpers.
+- `src/extended_otel_semconv/services/` contains runnable service packages and service-local configuration.
+- `src/extended_otel_semconv_devtools/` contains local demo and end-to-end validation helpers.
 - `deploy/local/otelcol.yaml` is generated from the merged registry.
-- `scripts/` contains validation, generation, and demo helpers.
+- `deploy/postgres/001_graph_schema.sql` is generated from the merged registry.
+- `scripts/` contains repository validation and artifact generation utilities.
 - `tests/` covers registry validation, generation freshness, entity parsing, and graph ingestion.
 
 ## Architecture Docs
@@ -52,6 +51,8 @@ What is implemented:
 - [Registry Extensions](docs/registry-extensions.md)
 - [Graph Engine](docs/graph-engine.md)
 - [Collector Pipeline](docs/collector-pipeline.md)
+- [Upstream Semconv Upgrade Runbook](docs/upstream-semconv-upgrade-runbook.md)
+- [Test Environment](docs/test-environment.md)
 - [Development](docs/development.md)
 
 ## Generate
@@ -62,6 +63,7 @@ upstream snapshot:
 ```powershell
 python scripts\generate_entities.py
 python scripts\generate_collector_config.py
+python scripts\generate_postgres_schema.py
 ```
 
 Check that generated files are current:
@@ -69,6 +71,7 @@ Check that generated files are current:
 ```powershell
 python scripts\generate_entities.py --check
 python scripts\generate_collector_config.py --check
+python scripts\generate_postgres_schema.py --check
 ```
 
 The entity generator emits runtime classes only for entities with explicit
@@ -97,7 +100,7 @@ for entity in entities:
     print(entity.entity_type, entity.entity_id)
 ```
 
-## Live Graph Demo
+## Local Pipeline
 
 Run the local stack:
 
@@ -107,17 +110,20 @@ docker compose up --build
 
 The stack starts:
 
-- `graph`: FastAPI entity graph service on `http://localhost:8000`;
 - `otelcol`: OpenTelemetry Collector receiving OTLP on `4317` and `4318`;
+- `kafka`: local Redpanda Kafka-compatible broker on `9092`;
+- `postgres`: table-per-entity graph storage on `5432`;
+- `graph-loader`: Kafka consumer that persists graph observations into Postgres;
 - `demo`: sample trace generator that sends OTLP HTTP traces through the collector.
 
-Inspect the graph:
+The Collector writes service graph metrics to Kafka topic
+`otel.servicegraph.metrics`; `graph-loader` consumes that topic and
+upserts entities and edges into Postgres.
+
+The graph loader service entrypoint is:
 
 ```powershell
-curl http://localhost:8000/health
-curl http://localhost:8000/entities
-curl http://localhost:8000/edges
-curl http://localhost:8000/graph
+python -m extended_otel_semconv.services.graph_loader.cli
 ```
 
 ## Validate
@@ -126,6 +132,7 @@ curl http://localhost:8000/graph
 python scripts\validate_registry.py
 python scripts\generate_entities.py --check
 python scripts\generate_collector_config.py --check
+python scripts\generate_postgres_schema.py --check
 python -m ruff check .
 python -m mypy src scripts tests
 python -m pytest
