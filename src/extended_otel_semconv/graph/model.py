@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Literal, TypeAlias
+from typing import Literal
 
-SourceSignal: TypeAlias = Literal["trace", "service_graph"]
+type SourceSignal = Literal["trace", "service_graph"]

@@ -6,7 +6,9 @@ from collections.abc import Iterable
 from typing import Any
 
 
-def iter_service_graph_log_records(document: dict[str, Any]) -> Iterable[tuple[str, dict[str, object], int | float, int | None]]:
+def iter_service_graph_log_records(
+    document: dict[str, Any],
+) -> Iterable[tuple[str, dict[str, object], int | float, int | None]]:
     for resource_log in document.get("resourceLogs", []):
         if not isinstance(resource_log, dict):
             continue

@@ -1,0 +1,111 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: servicegraph-default-deny
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: extended-otel-semconv
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: servicegraph-allow-dns
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: extended-otel-semconv
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: servicegraph-allow-flink-internal
+spec:
+  podSelector:
+    matchLabels:
+      servicegraph.network/role: flink
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              servicegraph.network/role: flink
+      ports:
+        - {protocol: TCP, port: 6121}
+        - {protocol: TCP, port: 6122}
+        - {protocol: TCP, port: 6123}
+        - {protocol: TCP, port: 6124}
+        - {protocol: TCP, port: 8081}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              servicegraph.network/role: flink
+      ports:
+        - {protocol: TCP, port: 6121}
+        - {protocol: TCP, port: 6122}
+        - {protocol: TCP, port: 6123}
+        - {protocol: TCP, port: 6124}
+        - {protocol: TCP, port: 8081}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: servicegraph-allow-otlp
+spec:
+  podSelector:
+    matchLabels:
+      servicegraph.network/role: collector
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: servicegraph-allow-kafka
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: extended-otel-semconv
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.0/24
+      ports:
+        - protocol: TCP
+          port: 9093
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: servicegraph-allow-kubernetes-api
+spec:
+  podSelector:
+    matchLabels:
+      servicegraph.network/role: flink
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 198.51.100.10/32
+      ports:
+        - protocol: TCP
+          port: 443

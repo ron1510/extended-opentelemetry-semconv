@@ -184,6 +184,8 @@ def _metrics_request(metric_name: str, attributes: dict[str, object], value: int
     metric.sum.aggregation_temporality = AGGREGATION_TEMPORALITY_CUMULATIVE
     point = metric.sum.data_points.add()
     point.as_int = value
+    point.start_time_unix_nano = 1
+    point.time_unix_nano = 2
     _set_attributes(point.attributes, attributes)
     return request
 

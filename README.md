@@ -1,130 +1,80 @@
 # Extended OpenTelemetry Semantic Conventions
 
-This project extends the OpenTelemetry semantic convention entity registry without
-redefining entities that OpenTelemetry already owns.
+This project extends the OpenTelemetry semantic convention entity registry
+without redefining entities that OpenTelemetry already owns.
 
-The project has three jobs:
+The runtime path is a streaming interaction diff engine:
 
-- load a pinned upstream OpenTelemetry semantic convention model snapshot;
-- define only custom extension entities and graph relationships;
-- normalize telemetry-derived graph observations and persist them from the merged model.
+```text
+OTLP traces
+  -> OpenTelemetry Collector service_graph connector
+  -> Kafka topic otel.servicegraph.metrics
+  -> PyFlink interaction diff state
+  -> Kafka topic graph.interactions.events
+  -> NiFi / MongoDB materialization outside this repo
+```
 
-The runtime path is production-shaped even in local development: traces enter the
-OpenTelemetry Collector, the `service_graph` connector derives dependencies,
-the Collector Kafka exporter writes those service graph metrics as OTLP JSON,
-Kafka buffers those records, and Python loader code turns them into durable
-graph observations.
+Postgres is intentionally not part of the runtime.
 
-## Current Status
+## What This Repo Owns
 
-This is a registry extension and graph-observation pipeline toolkit. It is built
-around Kafka buffering and table-per-entity Postgres persistence.
-
-What is implemented:
-
-- upstream OpenTelemetry model loading from `upstream/otel-semconv/v1.43.0/model`;
+- pinned upstream OpenTelemetry model loading from `upstream/otel-semconv/v1.43.0/model`;
 - custom extension model loading from `model/extensions`;
 - generated Pydantic entity classes for identifiable upstream and extension entities;
 - registry-defined graph relationships;
-- service_graph metric formatting into entity and edge observations;
-- generated table-per-entity Postgres schema from SQLAlchemy metadata;
-- SQLAlchemy Core upsert statements for graph observations;
-- generated Collector config dimensions from the merged registry.
+- Collector servicegraph dimension generation from modeled entity fields;
+- servicegraph metric parsing into interaction observations;
+- PyFlink state/diff logic that emits idempotent upsert/delete interaction events.
 
 ## Repository Layout
 
 - `upstream/otel-semconv/v1.43.0/model/` is the pinned upstream OpenTelemetry model snapshot.
-- `upstream/otel-semconv.lock.json` records the pinned upstream source.
 - `model/extensions/` contains extension attributes, entities, and relationships.
 - `src/extended_otel_semconv/generated/` contains committed generated entity classes.
-- `src/extended_otel_semconv/graph/` contains OTLP parsing, observation formatting, and SQLAlchemy persistence helpers.
-- `src/extended_otel_semconv/services/` contains runnable service packages and service-local configuration.
-- `src/extended_otel_semconv_devtools/` contains local demo and end-to-end validation helpers.
+- `src/extended_otel_semconv/graph/` contains OTLP parsing, relationships, dimensions, and interaction diff models.
+- `src/extended_otel_semconv/services/interaction_diff/` contains the PyFlink service entrypoint.
+- `src/extended_otel_semconv_devtools/telemetry/` contains local telemetry and Kafka helper tools.
 - `deploy/local/otelcol.yaml` is generated from the merged registry.
-- `deploy/postgres/001_graph_schema.sql` is generated from the merged registry.
+- `deploy/openshift/` contains the air-gapped, namespace-scoped OpenShift deployment.
 - `scripts/` contains repository validation and artifact generation utilities.
-- `tests/` covers registry validation, generation freshness, entity parsing, and graph ingestion.
-
-## Architecture Docs
-
-- [Architecture](docs/architecture.md)
-- [Registry Extensions](docs/registry-extensions.md)
-- [Graph Engine](docs/graph-engine.md)
-- [Collector Pipeline](docs/collector-pipeline.md)
-- [Upstream Semconv Upgrade Runbook](docs/upstream-semconv-upgrade-runbook.md)
-- [Test Environment](docs/test-environment.md)
-- [Development](docs/development.md)
+- `tests/` covers registry validation, generated models, servicegraph parsing, dimensions, and interaction diff behavior.
 
 ## Generate
-
-Regenerate committed artifacts after changing `model/extensions/` or the
-upstream snapshot:
 
 ```powershell
 python scripts\generate_entities.py
 python scripts\generate_collector_config.py
-python scripts\generate_postgres_schema.py
 ```
 
-Check that generated files are current:
+Check generated files:
 
 ```powershell
 python scripts\generate_entities.py --check
 python scripts\generate_collector_config.py --check
-python scripts\generate_postgres_schema.py --check
-```
-
-The entity generator emits runtime classes only for entities with explicit
-`role: identifying` attributes. Entities without identifying refs remain in the
-registry but are skipped by the runtime parser.
-
-## Python API
-
-Use `entities_from_attributes(...)` to parse raw OpenTelemetry attributes and
-create every generated entity whose identifying attributes are present.
-
-```python
-from extended_otel_semconv import entities_from_attributes
-
-entities = entities_from_attributes(
-    {
-        "service.name": "checkout-api",
-        "service.namespace": "payments",
-        "k8s.pod.uid": "4e2b0bb9-4700-4f20-bb6f-c6e2b5975c6b",
-        "http.request.method": "POST",
-        "http.route": "/checkout/{cart_id}",
-    }
-)
-
-for entity in entities:
-    print(entity.entity_type, entity.entity_id)
 ```
 
 ## Local Pipeline
 
-Run the local stack:
+The supported runtime is Python `3.12.13`, Apache Flink/PyFlink `2.2.1`, and
+the Flink Kafka connector `5.0.0-2.2`. Use:
 
 ```powershell
 docker compose up --build
 ```
 
-The stack starts:
+The stack starts Redpanda Kafka, the OpenTelemetry Collector, Flink
+JobManager/TaskManager, the interaction diff job, and a demo trace generator.
+The vendored Kafka JARs are Flink client dependencies, not Kafka Connect
+components; the Kafka cluster does not need Kafka Connect enabled.
 
-- `otelcol`: OpenTelemetry Collector receiving OTLP on `4317` and `4318`;
-- `kafka`: local Redpanda Kafka-compatible broker on `9092`;
-- `postgres`: table-per-entity graph storage on `5432`;
-- `graph-loader`: Kafka consumer that persists graph observations into Postgres;
-- `demo`: sample trace generator that sends OTLP HTTP traces through the collector.
+Input topic:
 
-The Collector writes service graph metrics to Kafka topic
-`otel.servicegraph.metrics`; `graph-loader` consumes that topic and
-upserts entities and edges into Postgres.
+- `otel.servicegraph.metrics`
 
-The graph loader service entrypoint is:
+Output topics:
 
-```powershell
-python -m extended_otel_semconv.services.graph_loader.cli
-```
+- `graph.interactions.events`
+- `graph.interactions.dlq`
 
 ## Validate
 
@@ -132,9 +82,25 @@ python -m extended_otel_semconv.services.graph_loader.cli
 python scripts\validate_registry.py
 python scripts\generate_entities.py --check
 python scripts\generate_collector_config.py --check
-python scripts\generate_postgres_schema.py --check
-python -m ruff check .
-python -m mypy src scripts tests
-python -m pytest
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m ruff check .
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m pyright
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m pytest
 docker compose config
 ```
+
+Run the complete upsert/DLQ/delete lifecycle smoke test with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\smoke_compose.ps1
+```
+
+## OpenShift
+
+The production starting point uses Flink native Kubernetes HA, an RWX
+checkpoint volume, a persistent Collector queue, restricted OpenShift security
+contexts, and external Kafka over SCRAM-SHA-256/TLS. It requires no CRDs or
+cluster-admin permissions.
+
+See `deploy/openshift/README.md` for required mock-value replacement,
+Artifactory image promotion, secret creation, server-side validation, and
+operational recovery procedures.

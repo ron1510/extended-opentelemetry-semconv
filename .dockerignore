@@ -1,0 +1,8 @@
+.git
+.hypothesis
+.pytest_cache
+.ruff_cache
+.pr-work
+.tmp
+__pycache__
+*.pyc

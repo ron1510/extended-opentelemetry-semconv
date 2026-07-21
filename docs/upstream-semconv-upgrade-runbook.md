@@ -139,7 +139,7 @@ Check that:
 - the Collector starts without config errors;
 - `graph` becomes healthy;
 - Collector logs show service graph logs exported to Kafka;
-- generated Postgres schema still matches the merged registry.
+- generated Collector servicegraph dimensions still match the merged registry.
 
 ## Commit Guidance
 

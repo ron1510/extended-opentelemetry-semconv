@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: servicegraph-otelcol
+  labels:
+    app.kubernetes.io/name: servicegraph-otelcol
+    app.kubernetes.io/part-of: extended-otel-semconv
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: servicegraph-otelcol
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servicegraph-otelcol
+  labels:
+    app.kubernetes.io/name: servicegraph-otelcol
+    app.kubernetes.io/part-of: extended-otel-semconv
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: servicegraph-otelcol
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: servicegraph-otelcol
+        app.kubernetes.io/component: collector
+        app.kubernetes.io/part-of: extended-otel-semconv
+        servicegraph.network/role: collector
+    spec:
+      serviceAccountName: servicegraph-otelcol
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: internal-registry-pull
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: otelcol
+          image: artifactory.example.internal/team/opentelemetry-collector-contrib@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          args: ["--config=/etc/otelcol/config.yaml"]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka.example.internal:9093
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: servicegraph-kafka-auth
+                  key: username
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: servicegraph-kafka-auth
+                  key: password
+            - name: INTERACTION_DIFF_INPUT_TOPIC
+              value: otel.servicegraph.metrics
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+          startupProbe:
+            tcpSocket:
+              port: otlp-grpc
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: otlp-grpc
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: otlp-grpc
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: kafka-ca
+              mountPath: /etc/kafka/tls
+              readOnly: true
+            - name: queue
+              mountPath: /var/lib/otelcol/queue
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: servicegraph-otelcol-config
+        - name: kafka-ca
+          secret:
+            secretName: servicegraph-kafka-auth
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: queue
+          persistentVolumeClaim:
+            claimName: servicegraph-otelcol-queue
+        - name: tmp
+          emptyDir: {}

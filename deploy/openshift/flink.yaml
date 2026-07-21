@@ -1,0 +1,378 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: servicegraph-flink-jobmanager
+  labels:
+    app.kubernetes.io/name: servicegraph-flink
+    app.kubernetes.io/component: jobmanager
+    app.kubernetes.io/part-of: extended-otel-semconv
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: servicegraph-flink
+    app.kubernetes.io/component: jobmanager
+  ports:
+    - name: rpc
+      port: 6123
+      targetPort: rpc
+    - name: blob
+      port: 6124
+      targetPort: blob
+    - name: rest
+      port: 8081
+      targetPort: rest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servicegraph-flink-jobmanager
+  labels:
+    app.kubernetes.io/name: servicegraph-flink
+    app.kubernetes.io/component: jobmanager
+    app.kubernetes.io/part-of: extended-otel-semconv
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: servicegraph-flink
+      app.kubernetes.io/component: jobmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: servicegraph-flink
+        app.kubernetes.io/component: jobmanager
+        app.kubernetes.io/part-of: extended-otel-semconv
+        servicegraph.network/role: flink
+    spec:
+      serviceAccountName: servicegraph-flink
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: internal-registry-pull
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 120
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: servicegraph-flink
+              app.kubernetes.io/component: jobmanager
+      containers:
+        - name: jobmanager
+          image: artifactory.example.internal/team/servicegraph-flink@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          args: ["jobmanager", "$(POD_IP)"]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          ports:
+            - name: rpc
+              containerPort: 6123
+            - name: blob
+              containerPort: 6124
+            - name: rest
+              containerPort: 8081
+          startupProbe:
+            httpGet:
+              path: /overview
+              port: rest
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /overview
+              port: rest
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /overview
+              port: rest
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1280Mi
+            limits:
+              cpu: "2"
+              memory: 1536Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: flink-config
+              mountPath: /opt/flink/conf/flink-conf.yaml
+              subPath: flink-conf.yaml
+              readOnly: true
+            - name: flink-state
+              mountPath: /flink-state
+            - name: kafka-ca
+              mountPath: /etc/kafka/tls
+              readOnly: true
+            - name: flink-log
+              mountPath: /opt/flink/log
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: flink-config
+          configMap:
+            name: servicegraph-flink-config
+        - name: flink-state
+          persistentVolumeClaim:
+            claimName: servicegraph-flink-state
+        - name: kafka-ca
+          secret:
+            secretName: servicegraph-kafka-auth
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: flink-log
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servicegraph-flink-taskmanager
+  labels:
+    app.kubernetes.io/name: servicegraph-flink
+    app.kubernetes.io/component: taskmanager
+    app.kubernetes.io/part-of: extended-otel-semconv
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: servicegraph-flink
+      app.kubernetes.io/component: taskmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: servicegraph-flink
+        app.kubernetes.io/component: taskmanager
+        app.kubernetes.io/part-of: extended-otel-semconv
+        servicegraph.network/role: flink
+    spec:
+      serviceAccountName: servicegraph-flink
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: internal-registry-pull
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 120
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: servicegraph-flink
+              app.kubernetes.io/component: taskmanager
+      containers:
+        - name: taskmanager
+          image: artifactory.example.internal/team/servicegraph-flink@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          args: ["taskmanager"]
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          ports:
+            - name: data
+              containerPort: 6121
+            - name: rpc
+              containerPort: 6122
+          startupProbe:
+            tcpSocket:
+              port: rpc
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: rpc
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: rpc
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1920Mi
+            limits:
+              cpu: "3"
+              memory: 2304Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: flink-config
+              mountPath: /opt/flink/conf/flink-conf.yaml
+              subPath: flink-conf.yaml
+              readOnly: true
+            - name: flink-state
+              mountPath: /flink-state
+            - name: kafka-ca
+              mountPath: /etc/kafka/tls
+              readOnly: true
+            - name: flink-log
+              mountPath: /opt/flink/log
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: flink-config
+          configMap:
+            name: servicegraph-flink-config
+        - name: flink-state
+          persistentVolumeClaim:
+            claimName: servicegraph-flink-state
+        - name: kafka-ca
+          secret:
+            secretName: servicegraph-kafka-auth
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: flink-log
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: servicegraph-flink-submit
+  labels:
+    app.kubernetes.io/name: servicegraph-flink
+    app.kubernetes.io/component: submitter
+    app.kubernetes.io/part-of: extended-otel-semconv
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: servicegraph-flink
+        app.kubernetes.io/component: submitter
+        app.kubernetes.io/part-of: extended-otel-semconv
+        servicegraph.network/role: flink
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: servicegraph-flink
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: internal-registry-pull
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: submitter
+          image: artifactory.example.internal/team/servicegraph-flink@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/opt/deployment/submit-job.sh"]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka.example.internal:9093
+            - name: KAFKA_SECURITY_PROTOCOL
+              value: SASL_SSL
+            - name: KAFKA_SASL_MECHANISM
+              value: SCRAM-SHA-256
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: servicegraph-kafka-auth
+                  key: username
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: servicegraph-kafka-auth
+                  key: password
+            - name: KAFKA_SSL_CA_FILE
+              value: /etc/kafka/tls/ca.crt
+            - name: INTERACTION_DIFF_INPUT_TOPIC
+              value: otel.servicegraph.metrics
+            - name: INTERACTION_DIFF_OUTPUT_TOPIC
+              value: graph.interactions.events
+            - name: INTERACTION_DIFF_DLQ_TOPIC
+              value: graph.interactions.dlq
+            - name: INTERACTION_DIFF_GROUP_ID
+              value: interaction-diff-engine
+            - name: INTERACTION_DIFF_TTL_SECONDS
+              value: "300"
+            - name: INTERACTION_DIFF_ALLOWED_LATENESS_SECONDS
+              value: "60"
+            - name: INTERACTION_DIFF_STATE_TTL_SECONDS
+              value: "86400"
+            - name: FLINK_CHECKPOINT_INTERVAL_MS
+              value: "30000"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: flink-config
+              mountPath: /opt/flink/conf/flink-conf.yaml
+              subPath: flink-conf.yaml
+              readOnly: true
+            - name: submit-script
+              mountPath: /opt/deployment/submit-job.sh
+              subPath: submit-job.sh
+              readOnly: true
+            - name: kafka-ca
+              mountPath: /etc/kafka/tls
+              readOnly: true
+            - name: flink-state
+              mountPath: /flink-state
+            - name: flink-log
+              mountPath: /opt/flink/log
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: flink-config
+          configMap:
+            name: servicegraph-flink-config
+        - name: submit-script
+          configMap:
+            name: servicegraph-job-submitter
+            defaultMode: 0550
+        - name: kafka-ca
+          secret:
+            secretName: servicegraph-kafka-auth
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: flink-state
+          persistentVolumeClaim:
+            claimName: servicegraph-flink-state
+        - name: flink-log
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

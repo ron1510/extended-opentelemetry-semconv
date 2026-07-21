@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from extended_otel_semconv import AppEndpoint, entities_from_attributes
 from extended_otel_semconv.entities import SemanticEntity, quoted_entity_id
 from extended_otel_semconv.graph.metrics import SERVICE_GRAPH_REQUEST_FAILED_TOTAL
-from extended_otel_semconv.graph.observation import EdgeObservation, EntityObservation, GraphObservation, ObservedEdge, ObservedEntity
+from extended_otel_semconv.graph.observation import (
+    EdgeObservation,
+    EntityObservation,
+    GraphObservation,
+    ObservedEdge,
+    ObservedEntity,
+)
 from extended_otel_semconv.graph.relationships import relationship_allows, relationship_edges
 from extended_otel_semconv.registry.model import RelationshipDefinition
 
@@ -54,7 +60,7 @@ def observations_from_service_graph_datapoint(
 
 
 def entities_from_service_graph_side(
-    attributes: dict[str, object],
+    attributes: Mapping[str, object],
     side: str,
     service_name: str,
 ) -> list[SemanticEntity]:
@@ -68,7 +74,7 @@ def entities_from_service_graph_side(
     return _entities_for_attributes(side_attributes, is_server=side == "server")
 
 
-def service_graph_edge_type(attributes: dict[str, object]) -> str:
+def service_graph_edge_type(attributes: Mapping[str, object]) -> str:
     connection_type = _string_attribute(attributes, "connection_type")
     if connection_type == "messaging_system":
         return "publishes_to"
@@ -142,7 +148,7 @@ def _observation_id(*parts: object) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _string_attribute(attributes: dict[str, object], key: str) -> str | None:
+def _string_attribute(attributes: Mapping[str, object], key: str) -> str | None:
     value = attributes.get(key)
     if isinstance(value, str) and value != "":
         return value

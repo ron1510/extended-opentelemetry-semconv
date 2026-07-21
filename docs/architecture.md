@@ -3,9 +3,9 @@
 The project is built around a strict ownership boundary.
 
 OpenTelemetry owns upstream semantic convention entities and attributes. This
-repository owns only extension entities, extension attributes, relationship
-definitions, graph-observation normalization, SQLAlchemy persistence helpers,
-and generated local artifacts.
+repository owns extension entities, extension attributes, relationship
+definitions, generated semantic models, servicegraph dimension selection, and
+the streaming interaction diff engine.
 
 ## Model Flow
 
@@ -14,42 +14,37 @@ and generated local artifacts.
 3. Validate that extensions do not redefine upstream attributes or entities.
 4. Merge upstream and extension registries in memory.
 5. Generate Python entity classes from identifiable entities.
-6. Generate Collector `service_graph` dimensions from merged registry attributes.
+6. Generate Collector `service_graph` dimensions from entity fields that
+   participate in `service_graph` relationships.
 
 The upstream snapshot is intentionally checked in. The runtime does not fetch
 OpenTelemetry models from the network.
 
-Use [Upstream Semconv Upgrade Runbook](upstream-semconv-upgrade-runbook.md) when
-changing this pinned version. A version bump is a model migration, not only a
-dependency update.
-
 ## Runtime Flow
 
-1. Applications send OTLP traces to the local Collector.
+1. Applications send OTLP traces to the Collector.
 2. The Collector `service_graph` connector derives request dependency metrics.
-3. The Collector Kafka exporter writes service graph metrics to Kafka as OTLP JSON.
-4. The graph loader consumes those metrics and writes normalized graph observations to Postgres.
-5. The formatter turns each datapoint log into normalized graph observations.
-6. The loader writes observations into table-per-entity Postgres tables through
-   SQLAlchemy Core statements generated from the merged registry.
-
-## Ownership Boundary
-
-This repository configures the OpenTelemetry Collector rather than replacing it.
-The Collector remains responsible for OTLP receiving, service dependency
-extraction, datapoint-to-log conversion, and Kafka export. Python code is
-responsible for registry-aware observation formatting and SQLAlchemy persistence
-helpers.
+3. The Collector Kafka exporter writes servicegraph metrics to Kafka as OTLP JSON.
+4. The PyFlink interaction diff job consumes those metrics.
+5. Flink keeps one keyed state record per interaction ID.
+6. Flink emits idempotent `upsert` and `delete` events to Kafka.
+7. NiFi and MongoDB materialization are downstream of this repository.
 
 ## Runtime State
 
-Postgres is the source-of-truth storage target. It uses one generated table per
-entity type plus shared edge, idempotency, and error tables. Organization-owned
-systems can project this data into graph caches outside this repository.
+Flink keyed state is the runtime source of current interaction truth. It stores
+latest observation time, metrics by name, dimensions, resolved entities, payload
+hash, and event-time expiry timestamp.
 
-## Validation Surface
+Delete events are emitted from event-time timers when watermarks advance. A
+matching processing-time safety timer handles a completely idle input stream;
+it emits the same business expiry and is replaced on every real observation.
+Flink state TTL remains defensive cleanup and is not a source of graph deletes.
 
-Architecture-level changes should pass both validation layers:
+## Production Notes
 
-- Python checks described in [Test Environment](test-environment.md);
-- Docker Compose runtime validation for Collector, Kafka, and Postgres wiring.
+- Scaled Collector servicegraph tiers need traceID-sticky routing.
+- Servicegraph output represents observed interactions, not full inventory.
+- Dimension generation is registry-driven and excludes template refs such as
+  labels, annotations, and selectors by default.
+- Kafka event consumers must be idempotent by `interaction_id`.

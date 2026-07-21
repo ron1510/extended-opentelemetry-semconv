@@ -14,49 +14,135 @@ services:
       - --advertise-kafka-addr=PLAINTEXT://kafka:9092
     ports:
       - "9092:9092"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    mem_limit: 1280m
 
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: entity_graph
-      POSTGRES_USER: entity_graph
-      POSTGRES_PASSWORD: entity_graph
-    ports:
-      - "5432:5432"
-    volumes:
-      - ./deploy/postgres/001_graph_schema.sql:/docker-entrypoint-initdb.d/001_graph_schema.sql:ro
+  kafka-topics:
+    image: redpandadata/redpanda:v24.3.5
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        rpk topic create otel.servicegraph.metrics --brokers kafka:9092 --partitions 3 || true
+        rpk topic create graph.interactions.events --brokers kafka:9092 --partitions 3 || true
+        rpk topic create graph.interactions.dlq --brokers kafka:9092 --partitions 3 || true
+    restart: "no"
 
   otelcol:
     image: otel/opentelemetry-collector-contrib:0.156.0
     command: ["--config=/etc/otelcol/config.yaml"]
     depends_on:
-      - kafka
+      kafka-topics:
+        condition: service_completed_successfully
     ports:
       - "4317:4317"
       - "4318:4318"
     volumes:
       - ./deploy/local/otelcol.yaml:/etc/otelcol/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol/config.yaml"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
 
-  graph-loader:
+  flink-jobmanager:
     build: .
-    command: python -m extended_otel_semconv.services.graph_loader.cli
-    depends_on:
-      - kafka
-      - postgres
-      - otelcol
+    image: extended-otel-flink:2.2.1
+    command: jobmanager
+    ports:
+      - "8081:8081"
     environment:
-      GRAPH_POSTGRES_URL: postgresql+psycopg://entity_graph:entity_graph@postgres:5432/entity_graph
-      GRAPH_LOADER_INPUT: kafka-otlp-json-metrics
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 1024m
+        state.backend.type: hashmap
+        execution.checkpointing.storage: filesystem
+        execution.checkpointing.dir: file:///opt/flink/checkpoints
+        execution.checkpointing.savepoint-dir: file:///opt/flink/savepoints
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+      - flink-savepoints:/opt/flink/savepoints
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/overview"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    mem_limit: 1280m
+
+  flink-taskmanager:
+    image: extended-otel-flink:2.2.1
+    command: taskmanager
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        taskmanager.memory.process.size: 1536m
+        state.backend.type: hashmap
+        execution.checkpointing.storage: filesystem
+        execution.checkpointing.dir: file:///opt/flink/checkpoints
+        execution.checkpointing.savepoint-dir: file:///opt/flink/savepoints
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+      - flink-savepoints:/opt/flink/savepoints
+    healthcheck:
+      test: ["CMD-SHELL", "test -n \"$(curl --fail --silent http://flink-jobmanager:8081/taskmanagers)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    mem_limit: 1792m
+
+  interaction-diff:
+    image: extended-otel-flink:2.2.1
+    depends_on:
+      kafka-topics:
+        condition: service_completed_successfully
+      flink-jobmanager:
+        condition: service_healthy
+      flink-taskmanager:
+        condition: service_healthy
+    command:
+      - flink
+      - run
+      - -d
+      - -m
+      - flink-jobmanager:8081
+      - -py
+      - /app/src/extended_otel_semconv/services/interaction_diff/cli.py
+    environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      GRAPH_KAFKA_TOPIC: otel.servicegraph.metrics
-      GRAPH_KAFKA_GROUP_ID: entity-graph-loader
-      GRAPH_KAFKA_BATCH_SIZE: "1000"
+      INTERACTION_DIFF_INPUT_TOPIC: otel.servicegraph.metrics
+      INTERACTION_DIFF_OUTPUT_TOPIC: graph.interactions.events
+      INTERACTION_DIFF_DLQ_TOPIC: graph.interactions.dlq
+      INTERACTION_DIFF_GROUP_ID: interaction-diff-engine
+      INTERACTION_DIFF_TTL_SECONDS: "300"
+      INTERACTION_DIFF_ALLOWED_LATENESS_SECONDS: "60"
+      INTERACTION_DIFF_STATE_TTL_SECONDS: "86400"
+      FLINK_CHECKPOINT_INTERVAL_MS: "30000"
+    restart: "no"
 
   demo:
-    build: .
-    command: python -m extended_otel_semconv_devtools.graph_loader.demo
+    image: extended-otel-flink:2.2.1
+    command: python -m extended_otel_semconv_devtools.telemetry.demo
     depends_on:
-      - otelcol
+      otelcol:
+        condition: service_healthy
+      interaction-diff:
+        condition: service_completed_successfully
     environment:
       OTLP_HTTP_ENDPOINT: http://otelcol:4318/v1/traces
       DEMO_INTERVAL_SECONDS: "5"
+    profiles: ["demo"]
+
+volumes:
+  flink-checkpoints:
+  flink-savepoints:

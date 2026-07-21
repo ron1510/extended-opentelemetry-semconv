@@ -31,7 +31,7 @@ Run code quality checks:
 
 ```powershell
 python -m ruff check .
-python -m mypy src scripts tests
+python -m pyright
 python -m pytest
 ```
 

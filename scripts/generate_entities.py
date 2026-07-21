@@ -189,7 +189,10 @@ def _render_package_init(entities: tuple[GeneratedEntity, ...], domains: list[st
         domain_entities = tuple(entity for entity in entities if entity.domain == domain)
         names = ", ".join(entity.class_name for entity in domain_entities)
         lines.append(f"from extended_otel_semconv.generated.{domain} import {names}")
-        lines.append(f"from extended_otel_semconv.generated.{domain} import entities_from_attributes as _{domain}_entities")
+        lines.append(
+            f"from extended_otel_semconv.generated.{domain} "
+            f"import entities_from_attributes as _{domain}_entities"
+        )
     lines.extend(
         [
             "",
