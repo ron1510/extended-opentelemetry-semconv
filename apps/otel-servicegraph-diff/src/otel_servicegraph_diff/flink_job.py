@@ -75,6 +75,7 @@ def run_flink_job(config: InteractionDiffConfig) -> None:
     )
     env = StreamExecutionEnvironment.get_execution_environment(flink_config)
     env.set_runtime_mode(RuntimeExecutionMode.STREAMING)
+    env.set_parallelism(config.parallelism)
     env.enable_checkpointing(config.checkpoint_interval_ms)
 
     source = _kafka_source(config)

@@ -64,6 +64,23 @@ def render_collector_config() -> str:
         },
     }
     config["service"]["extensions"] = ["health_check"]
+    config["service"]["telemetry"] = {
+        "metrics": {
+            "level": "detailed",
+            "readers": [
+                {
+                    "pull": {
+                        "exporter": {
+                            "prometheus": {
+                                "host": "0.0.0.0",
+                                "port": 8888,
+                            },
+                        },
+                    },
+                },
+            ],
+        },
+    }
     return yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
 
 
@@ -157,8 +174,8 @@ def _base_collector_config(dimensions: list[str]) -> dict[str, Any]:
             },
             "batch/servicegraph_metrics": {
                 "timeout": "1s",
-                "send_batch_size": 1,
-                "send_batch_max_size": 1,
+                "send_batch_size": 256,
+                "send_batch_max_size": 512,
             },
         },
         "connectors": {
@@ -170,7 +187,7 @@ def _base_collector_config(dimensions: list[str]) -> dict[str, Any]:
                     "ttl": "10s",
                     "max_items": 10000,
                 },
-                "metrics_flush_interval": "1s",
+                "metrics_flush_interval": "5s",
             },
         },
         "exporters": {},

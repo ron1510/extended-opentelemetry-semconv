@@ -7,7 +7,8 @@ $ErrorActionPreference = "Stop"
 $compose = @(
     "compose",
     "-f", "docker-compose.yaml",
-    "-f", "docker-compose.smoke.yaml"
+    "-f", "docker-compose.smoke.yaml",
+    "-f", "docker-compose.acceptance.yaml"
 )
 
 function Invoke-Compose {
@@ -35,17 +36,25 @@ function Wait-FlinkJob {
 }
 
 try {
+    if (-not $SkipBuild) {
+        & "$PSScriptRoot/build_wheels.ps1"
+        if ($LASTEXITCODE -ne 0) {
+            throw "wheel build failed"
+        }
+    }
     $upArguments = @("--profile", "smoke", "up", "-d")
     if (-not $SkipBuild) {
         $upArguments += "--build"
     }
     $upArguments += @("kafka", "kafka-topics", "otelcol", "flink-jobmanager", "flink-taskmanager", "interaction-diff")
+    $upArguments += @("wheel-installer")
     Invoke-Compose @upArguments
     Wait-FlinkJob
 
-    Invoke-Compose --profile smoke run --rm --no-deps demo-once
-    Start-Sleep -Seconds 7
-    Invoke-Compose run --rm --no-deps interaction-diff python scripts/verify_smoke.py --bootstrap kafka:9092
+    Invoke-Compose --profile acceptance run --rm --no-deps acceptance-tools `
+        python -m extended_otel_semconv_devtools.confidence.lifecycle `
+        --bootstrap kafka:9092 `
+        --otlp-endpoint http://otelcol:4318/v1/traces
 } finally {
-    Invoke-Compose --profile smoke down --volumes --remove-orphans
+    Invoke-Compose --profile smoke --profile acceptance down --volumes --remove-orphans
 }

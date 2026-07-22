@@ -29,7 +29,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["RUF043"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["extended_otel_semconv", "otel_servicegraph_diff"]
+known-first-party = ["extended_otel_semconv", "extended_otel_semconv_devtools", "otel_servicegraph_diff"]
 
 [tool.pyright]
 include = [
@@ -37,6 +37,7 @@ include = [
   "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/graph/metrics.py",
   "apps/otel-servicegraph-diff/src",
   "apps/otel-servicegraph-diff/tests",
+  "tools/extended_otel_semconv_devtools/confidence",
 ]
 extraPaths = [
   "packages/extended-opentelemetry-semconv/src",

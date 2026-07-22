@@ -13,6 +13,10 @@ from extended_otel_semconv.graph.otlp import key_values_to_attributes
 
 SERVICE_GRAPH_REQUEST_TOTAL = "traces_service_graph_request_total"
 SERVICE_GRAPH_REQUEST_FAILED_TOTAL = "traces_service_graph_request_failed_total"
+SERVICE_GRAPH_METRIC_PREFIX = "traces_service_graph_"
+SUPPORTED_SERVICE_GRAPH_METRICS = frozenset(
+    {SERVICE_GRAPH_REQUEST_TOTAL, SERVICE_GRAPH_REQUEST_FAILED_TOTAL}
+)
 
 type MetricTemporality = Literal["delta", "cumulative"]
 type MetricValue = int | float
@@ -29,6 +33,13 @@ class MetricPoint(BaseModel):
     temporality: MetricTemporality = "cumulative"
 
 
+class ParsedMetricsDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    points: tuple[MetricPoint, ...]
+    metric_names: frozenset[str]
+
+
 def parse_metrics_request(body: bytes) -> list[MetricPoint]:
     request = ExportMetricsServiceRequest()
     request.ParseFromString(body)
@@ -36,11 +47,25 @@ def parse_metrics_request(body: bytes) -> list[MetricPoint]:
 
 
 def parse_metrics_json_document(document: dict[str, object]) -> list[MetricPoint]:
+    return list(parse_metrics_json_document_with_names(document).points)
+
+
+def parse_metrics_json_document_with_names(document: dict[str, object]) -> ParsedMetricsDocument:
     try:
         request = ParseDict(document, ExportMetricsServiceRequest(), ignore_unknown_fields=True)
     except ParseError as exc:
         raise ValueError(str(exc)) from exc
-    return metric_points_from_request(request)
+    return ParsedMetricsDocument(
+        points=tuple(metric_points_from_request(request)),
+        metric_names=frozenset(_metric_names(request)),
+    )
+
+
+def contains_only_ignored_service_graph_metrics(metric_names: frozenset[str]) -> bool:
+    return bool(metric_names) and all(
+        name.startswith(SERVICE_GRAPH_METRIC_PREFIX) and name not in SUPPORTED_SERVICE_GRAPH_METRICS
+        for name in metric_names
+    )
 
 
 def metric_points_from_request(request: ExportMetricsServiceRequest) -> list[MetricPoint]:
@@ -53,7 +78,7 @@ def metric_points_from_request(request: ExportMetricsServiceRequest) -> list[Met
 
 
 def _metric_points(metric: Metric) -> list[MetricPoint]:
-    if metric.name not in {SERVICE_GRAPH_REQUEST_TOTAL, SERVICE_GRAPH_REQUEST_FAILED_TOTAL}:
+    if metric.name not in SUPPORTED_SERVICE_GRAPH_METRICS:
         return []
     if metric.WhichOneof("data") != "sum":
         return []
@@ -96,3 +121,13 @@ def _number_value(point: NumberDataPoint) -> MetricValue:
     if value_kind == "as_double":
         return point.as_double
     raise ValueError("servicegraph number datapoint has no numeric value")
+
+
+def _metric_names(request: ExportMetricsServiceRequest) -> set[str]:
+    return {
+        metric.name
+        for resource_metrics in request.resource_metrics
+        for scope_metrics in resource_metrics.scope_metrics
+        for metric in scope_metrics.metrics
+        if metric.name
+    }

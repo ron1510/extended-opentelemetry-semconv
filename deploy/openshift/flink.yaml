@@ -323,6 +323,8 @@ spec:
               value: "86400"
             - name: FLINK_CHECKPOINT_INTERVAL_MS
               value: "30000"
+            - name: FLINK_PARALLELISM
+              value: "3"
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           resources:

@@ -25,8 +25,8 @@ processors:
     send_batch_size: 256
   batch/servicegraph_metrics:
     timeout: 1s
-    send_batch_size: 1
-    send_batch_max_size: 1
+    send_batch_size: 256
+    send_batch_max_size: 512
 connectors:
   service_graph:
     dimensions:
@@ -121,7 +121,7 @@ connectors:
     store:
       ttl: 10s
       max_items: 10000
-    metrics_flush_interval: 1s
+    metrics_flush_interval: 5s
 exporters:
   kafka/servicegraph_metrics:
     brokers:

@@ -26,6 +26,11 @@ def test_config_rejects_invalid_topic_name() -> None:
         InteractionDiffConfig(output_topic="contains spaces")
 
 
+def test_config_rejects_non_positive_parallelism() -> None:
+    with pytest.raises(ValidationError):
+        InteractionDiffConfig(parallelism=0)
+
+
 def test_plaintext_config_has_only_explicit_security_protocol() -> None:
     config = InteractionDiffConfig()
 

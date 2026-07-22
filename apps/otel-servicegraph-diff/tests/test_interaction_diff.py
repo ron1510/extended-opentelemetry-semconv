@@ -17,7 +17,8 @@ from extended_otel_semconv.graph.interaction import (
     observation_from_servicegraph_datapoint,
 )
 from extended_otel_semconv.graph.metrics import SERVICE_GRAPH_REQUEST_FAILED_TOTAL, SERVICE_GRAPH_REQUEST_TOTAL
-from otel_servicegraph_diff.runner import iter_observations_or_dlq
+from extended_otel_semconv_devtools.confidence.otlp_metrics import MetricSample, metrics_json
+from otel_servicegraph_diff.runner import iter_observations_or_dlq, iter_parsed_payloads
 
 
 def test_servicegraph_datapoint_parses_into_interaction_observation() -> None:
@@ -114,6 +115,21 @@ def test_bad_payload_becomes_dlq_event() -> None:
     assert len(events) == 1
     assert isinstance(events[0], InteractionDlqEvent)
     assert events[0].event_type == "interaction_record_rejected"
+
+
+def test_unsupported_service_graph_metric_is_ignored_without_dlq_noise() -> None:
+    payload = metrics_json(
+        (
+            MetricSample(
+                name="traces_service_graph_request_duration_seconds",
+                attributes={"client": "frontend", "server": "checkout-api"},
+                value=1,
+                observed_at_unix_nano=1,
+            ),
+        )
+    )
+
+    assert tuple(iter_parsed_payloads(payload)) == ()
 
 
 def test_repeated_cumulative_sample_does_not_refresh_expiry() -> None:

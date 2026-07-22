@@ -14,7 +14,9 @@ def test_deployable_image_does_not_require_root_or_a_fixed_uid() -> None:
     assert "USER 1001" not in dockerfile
     assert "USER flink" in dockerfile
     assert "--chown=flink:0" in dockerfile
+    assert "--chmod=0660" in dockerfile
     assert "PYFLINK_CLIENT_EXECUTABLE=/usr/local/bin/python3.12" in dockerfile
+    assert "/layout/opt/application" in dockerfile
 
 
 def test_runtime_targets_java_11_and_uses_package_metadata_for_dependencies() -> None:

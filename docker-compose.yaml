@@ -43,6 +43,7 @@ services:
     ports:
       - "4317:4317"
       - "4318:4318"
+      - "8888:8888"
     volumes:
       - ./deploy/local/otelcol.yaml:/etc/otelcol/config.yaml:ro
     healthcheck:
@@ -88,7 +89,7 @@ services:
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 2
+        taskmanager.numberOfTaskSlots: 3
         taskmanager.memory.process.size: 1536m
         state.backend.type: hashmap
         execution.checkpointing.storage: filesystem
@@ -131,6 +132,7 @@ services:
       INTERACTION_DIFF_ALLOWED_LATENESS_SECONDS: "60"
       INTERACTION_DIFF_STATE_TTL_SECONDS: "86400"
       FLINK_CHECKPOINT_INTERVAL_MS: "30000"
+      FLINK_PARALLELISM: "3"
     restart: "no"
 
   demo:

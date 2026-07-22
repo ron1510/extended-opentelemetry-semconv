@@ -77,6 +77,7 @@ class InteractionDiffConfig(BaseSettings):
     )
     state_ttl_seconds: int = Field(default=86_400, gt=0, validation_alias="INTERACTION_DIFF_STATE_TTL_SECONDS")
     checkpoint_interval_ms: int = Field(default=30_000, ge=1_000, validation_alias="FLINK_CHECKPOINT_INTERVAL_MS")
+    parallelism: int = Field(default=3, gt=0, validation_alias="FLINK_PARALLELISM")
     restart_attempts: int = Field(default=3, ge=0, validation_alias="FLINK_RESTART_ATTEMPTS")
     restart_delay_seconds: int = Field(default=10, ge=0, validation_alias="FLINK_RESTART_DELAY_SECONDS")
 

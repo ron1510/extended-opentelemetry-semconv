@@ -18,6 +18,8 @@ RUN --mount=type=secret,id=maven_settings,required=false \
 
 FROM ${PYTHON_BASE_IMAGE} AS python-runtime
 
+FROM ${FLINK_BASE_IMAGE} AS flink-distribution
+
 FROM python-runtime AS python-dependencies
 
 WORKDIR /dependencies
@@ -41,6 +43,7 @@ RUN mkdir -p \
       /layout/opt/flink/checkpoints \
       /layout/opt/flink/log \
       /layout/opt/flink/savepoints \
+      /layout/opt/application \
       /layout/flink-state \
       /layout/workspace \
     && chgrp -R 0 /layout \
@@ -73,6 +76,9 @@ FROM ${FLINK_BASE_IMAGE} AS runtime-base
 
 COPY --from=python-dependencies --chown=flink:0 /usr/local /usr/local
 COPY --from=runtime-layout --chown=flink:0 /layout/ /
+COPY --from=flink-distribution --chown=flink:0 --chmod=0660 \
+  /opt/flink/conf/config.yaml \
+  /opt/flink/conf/config.yaml
 COPY --from=java-runtime --chown=flink:0 --chmod=0440 \
   /build/target/interaction-serializer.jar \
   /opt/flink/lib/interaction-serializer.jar

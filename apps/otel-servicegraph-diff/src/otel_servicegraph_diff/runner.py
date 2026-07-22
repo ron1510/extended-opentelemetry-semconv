@@ -15,7 +15,10 @@ from extended_otel_semconv.graph.interaction import (
     digest,
     observation_from_metric_point,
 )
-from extended_otel_semconv.graph.metrics import parse_metrics_json_document
+from extended_otel_semconv.graph.metrics import (
+    contains_only_ignored_service_graph_metrics,
+    parse_metrics_json_document_with_names,
+)
 
 
 class ParsedObservation(FrozenModel):
@@ -42,8 +45,9 @@ class JsonDocument(RootModel[dict[str, JsonValue]]):
 
 def observations_from_otlp_json_metrics_payload(payload: str) -> tuple[InteractionObservation, ...]:
     document = JsonDocument.model_validate_json(payload).root
+    parsed = parse_metrics_json_document_with_names(cast(dict[str, object], document))
     observations: list[InteractionObservation] = []
-    for point in parse_metrics_json_document(cast(dict[str, object], document)):
+    for point in parsed.points:
         observation = observation_from_metric_point(point)
         if observation is not None:
             observations.append(observation)
@@ -52,8 +56,16 @@ def observations_from_otlp_json_metrics_payload(payload: str) -> tuple[Interacti
 
 def iter_parsed_payloads(payload: str) -> Iterator[ParsedPayload]:
     try:
-        observations = observations_from_otlp_json_metrics_payload(payload)
+        document = JsonDocument.model_validate_json(payload).root
+        parsed = parse_metrics_json_document_with_names(cast(dict[str, object], document))
+        observations = tuple(
+            observation
+            for point in parsed.points
+            if (observation := observation_from_metric_point(point)) is not None
+        )
         if not observations:
+            if contains_only_ignored_service_graph_metrics(parsed.metric_names):
+                return
             raise ValueError("payload contains no valid timestamped servicegraph datapoints")
         for observation in observations:
             yield ParsedObservation(observation=observation)
