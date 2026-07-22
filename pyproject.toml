@@ -1,25 +1,6 @@
-[project]
-name = "extended-opentelemetry-semconv"
-version = "0.1.0"
-description = "OpenTelemetry-compatible semantic entity registry extensions."
-requires-python = ">=3.12,<3.13"
-dependencies = [
-  "apache-flink==2.2.1",
-  "confluent-kafka==2.15.0",
-  "opentelemetry-proto==1.44.0",
-  "opentelemetry-semantic-conventions==0.64b0",
-  "pydantic==2.13.4",
-  "pydantic-settings==2.14.2",
-  "PyYAML==6.0.3",
-]
-
-[project.scripts]
-extended-otel-interaction-diff = "extended_otel_semconv.services.interaction_diff.cli:main"
-extended-otel-stress-telemetry = "extended_otel_semconv_devtools.telemetry.stress:main"
-extended-otel-send-bad-kafka-metric = "extended_otel_semconv_devtools.telemetry.poison:main"
-
 [dependency-groups]
 dev = [
+  "confluent-kafka==2.15.0",
   "hypothesis==6.158.0",
   "pyright==1.1.411",
   "pytest==9.1.1",
@@ -27,11 +8,19 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
+pythonpath = [
+  "packages/extended-opentelemetry-semconv/src",
+  "apps/otel-servicegraph-diff/src",
+  "tools",
+]
+testpaths = ["tests", "apps/otel-servicegraph-diff/tests"]
 
 [tool.ruff]
-exclude = [".pr-work", ".tmp", "src/extended_otel_semconv/generated"]
+exclude = [
+  ".pr-work",
+  ".tmp",
+  "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/generated",
+]
 line-length = 120
 target-version = "py312"
 
@@ -39,14 +28,19 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["RUF043"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["extended_otel_semconv", "otel_servicegraph_diff"]
+
 [tool.pyright]
 include = [
-  "src/extended_otel_semconv/graph/interaction.py",
-  "src/extended_otel_semconv/graph/metrics.py",
-  "src/extended_otel_semconv/services/interaction_diff",
-  "tests/test_interaction_config.py",
-  "tests/test_interaction_diff.py",
-  "tests/test_flink_operator.py",
+  "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/graph/interaction.py",
+  "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/graph/metrics.py",
+  "apps/otel-servicegraph-diff/src",
+  "apps/otel-servicegraph-diff/tests",
+]
+extraPaths = [
+  "packages/extended-opentelemetry-semconv/src",
+  "apps/otel-servicegraph-diff/src",
 ]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"

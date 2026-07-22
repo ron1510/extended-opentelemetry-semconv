@@ -11,7 +11,7 @@ from typing import Any
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "packages" / "extended-opentelemetry-semconv" / "src"))
 
 from extended_otel_semconv.graph.dimensions import service_graph_dimensions  # noqa: E402
 from extended_otel_semconv.registry.validation import load_model_registry, validate_extension_model  # noqa: E402
@@ -50,7 +50,7 @@ def render_collector_config() -> str:
                 "encoding": "otlp_json",
             },
             "producer": {
-                "compression": "zstd",
+                "compression": "gzip",
             },
             "sending_queue": {
                 "enabled": True,
@@ -99,7 +99,7 @@ def render_openshift_collector_config() -> str:
                 },
             },
             "producer": {
-                "compression": "zstd",
+                "compression": "gzip",
                 "required_acks": -1,
                 "allow_auto_topic_creation": False,
             },

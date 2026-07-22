@@ -1,0 +1,9 @@
+{
+  "source": {
+    "kind": "github_release_source_archive",
+    "repository": "open-telemetry/semantic-conventions",
+    "version": "v1.43.0",
+    "url": "https://github.com/open-telemetry/semantic-conventions/archive/refs/tags/v1.43.0.zip",
+    "artifact": "upstream/otel-semconv/v1.43.0/model"
+  }
+}

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extended-opentelemetry-semconv"
+version = "0.1.0"
+description = "OpenTelemetry-compatible semantic entity registry and graph models."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "opentelemetry-proto==1.44.0",
+  "pydantic==2.13.4",
+  "PyYAML==6.0.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+extended_otel_semconv = ["metadata/*.json"]

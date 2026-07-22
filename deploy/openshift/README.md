@@ -42,30 +42,52 @@ The baseline expects three partitions for each topic. Topic auto-creation is
 disabled. Replication, retention, quotas, and ACLs remain owned by the Kafka
 platform.
 
-## Air-Gapped Image Build
+## Air-Gapped Runtime Build
 
-Mirror the Python and Flink base images into Artifactory. The build reads
-Python packages from the supplied internal PyPI index and copies the checked-in
-Flink connector JARs into the image; containers install nothing at startup.
-`requirements.lock` pins the reviewed Linux/Python 3.12 dependency closure, so
-the internal mirror must contain those exact versions.
+Mirror the Maven, Python, and Flink base images into Artifactory. The build
+reads Python packages from internal PyPI, resolves the Flink Kafka connector
+from internal Maven, and compiles the private interaction serializer. No
+binary dependencies are committed to Git and containers install nothing at
+startup. The two package `pyproject.toml` files are the only source of Python
+dependency declarations; the runtime build resolves their transitive closure
+through the configured internal PyPI repository.
+
+Maven and pip run only in disposable image-build stages. Those stages may use
+their base image's build user, including UID 0 inside a rootless BuildKit user
+namespace; that identity is not present in a deployed workload. The final
+Flink stages contain no `USER root` or fixed numeric UID, default to the
+upstream non-root `flink` user, and support the arbitrary UID assigned by the
+OpenShift restricted SCC. Runtime pods need access to Kafka and their mounted
+configuration/state only; they do not need network access to Maven or PyPI.
 
 ```powershell
 docker build `
+  --file apps/otel-servicegraph-diff/Dockerfile `
   --build-arg PYTHON_BASE_IMAGE='<registry>/python:3.12.13-slim-bookworm' `
-  --build-arg FLINK_BASE_IMAGE='<registry>/flink:2.2.1-scala_2.12-java17' `
+  --build-arg FLINK_BASE_IMAGE='<registry>/flink:2.2.1-scala_2.12-java11' `
+  --build-arg MAVEN_BASE_IMAGE='<registry>/maven:3.9.11-eclipse-temurin-11' `
   --build-arg PIP_INDEX_URL='https://<artifactory>/api/pypi/pypi/simple' `
   --build-arg PIP_TRUSTED_HOST='<artifactory-host>' `
+  --secret id=maven_settings,src='<secure-path>/settings.xml' `
   --tag '<registry>/team/servicegraph-flink:<version>' .
 ```
 
-Promote the application and Collector 0.156.0 images by digest, then replace
-the mock digests in `flink.yaml` and `collector.yaml`. Verify the vendored JAR
-hashes against `vendor/flink/README.md` before building.
+`.mvn/settings.xml.example` is a credential-free template for the BuildKit
+secret. Maven credentials are supplied by CI environment variables. Promote
+the runtime and Collector 0.156.0 images by digest, then replace the mock
+digests in `flink.yaml` and `collector.yaml`.
 
-The two small Java serializers are part of the Flink application image. They
+The two small Java serializers are part of the Flink runtime image. They
 map the two fields of a PyFlink `Row` to the Kafka record key and value. They
 are not Kafka Connect plugins and place no requirement on the Kafka service.
+
+The semantic library and Flink application are published as separate wheels.
+Production wheel delivery and submission are intentionally deferred to the
+next deployment-design pass. The current submitter manifest still uses the
+source path available in the Dockerfile's `development` target and therefore
+must not be paired with the thin `runtime` target yet. This is a deliberate,
+documented deployment gap for the next pass, not a production-ready submission
+mechanism.
 
 ## Validate And Apply
 

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "otel-servicegraph-diff"
+version = "0.1.0"
+description = "PyFlink servicegraph interaction diff application."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "apache-flink==2.2.1",
+  "extended-opentelemetry-semconv>=0.1.0,<0.2.0",
+  "pydantic-settings==2.14.2",
+]
+
+[project.scripts]
+otel-servicegraph-diff = "otel_servicegraph_diff.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

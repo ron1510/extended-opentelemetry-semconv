@@ -123,7 +123,7 @@ exporters:
       topic: otel.servicegraph.metrics
       encoding: otlp_json
     producer:
-      compression: zstd
+      compression: gzip
     sending_queue:
       enabled: true
       sizer: items

@@ -16,28 +16,45 @@ OTLP traces
 
 Postgres is intentionally not part of the runtime.
 
-## What This Repo Owns
+## Published Packages
 
-- pinned upstream OpenTelemetry model loading from `upstream/otel-semconv/v1.43.0/model`;
-- custom extension model loading from `model/extensions`;
-- generated Pydantic entity classes for identifiable upstream and extension entities;
-- registry-defined graph relationships;
-- Collector servicegraph dimension generation from modeled entity fields;
-- servicegraph metric parsing into interaction observations;
-- PyFlink state/diff logic that emits idempotent upsert/delete interaction events.
+- `extended-opentelemetry-semconv` owns the registry, generated Pydantic
+  entities, relationships, OTLP observation parsing, and pure interaction diff
+  models.
+- `otel-servicegraph-diff` owns validated runtime settings and the PyFlink/Kafka
+  application wiring.
+
+The semantic package has no PyFlink, Kafka client, or environment-settings
+dependency. The Flink application depends on the semantic package through its
+published Python package contract.
 
 ## Repository Layout
 
 - `upstream/otel-semconv/v1.43.0/model/` is the pinned upstream OpenTelemetry model snapshot.
 - `model/extensions/` contains extension attributes, entities, and relationships.
-- `src/extended_otel_semconv/generated/` contains committed generated entity classes.
-- `src/extended_otel_semconv/graph/` contains OTLP parsing, relationships, dimensions, and interaction diff models.
-- `src/extended_otel_semconv/services/interaction_diff/` contains the PyFlink service entrypoint.
-- `src/extended_otel_semconv_devtools/telemetry/` contains local telemetry and Kafka helper tools.
+- `packages/extended-opentelemetry-semconv/` is the independently buildable semantic library.
+- `apps/otel-servicegraph-diff/` is the independently buildable PyFlink application.
+- `tools/extended_otel_semconv_devtools/` contains local telemetry and Kafka helpers.
 - `deploy/local/otelcol.yaml` is generated from the merged registry.
 - `deploy/openshift/` contains the air-gapped, namespace-scoped OpenShift deployment.
 - `scripts/` contains repository validation and artifact generation utilities.
-- `tests/` covers registry validation, generated models, servicegraph parsing, dimensions, and interaction diff behavior.
+- `tests/` contains semantic-library and architecture tests; application tests
+  live beside the application.
+
+## Package Builds
+
+Build the packages independently with any PEP 517 frontend:
+
+```powershell
+python -m pip wheel --no-deps --wheel-dir dist packages\extended-opentelemetry-semconv
+python -m pip wheel --no-deps --wheel-dir dist apps\otel-servicegraph-diff
+```
+
+For local development, install both as editable packages:
+
+```powershell
+python -m pip install -e packages\extended-opentelemetry-semconv -e apps\otel-servicegraph-diff
+```
 
 ## Generate
 
@@ -55,8 +72,10 @@ python scripts\generate_collector_config.py --check
 
 ## Local Pipeline
 
-The supported runtime is Python `3.12.13`, Apache Flink/PyFlink `2.2.1`, and
-the Flink Kafka connector `5.0.0-2.2`. Use:
+The supported runtime is Python `3.12.13`, Java `11`, Apache Flink/PyFlink
+`2.2.1`, and the Flink Kafka connector `5.0.0-2.2`. Compose builds the
+Dockerfile's local development target and runs the same behavior as the
+production application:
 
 ```powershell
 docker compose up --build
@@ -64,8 +83,17 @@ docker compose up --build
 
 The stack starts Redpanda Kafka, the OpenTelemetry Collector, Flink
 JobManager/TaskManager, the interaction diff job, and a demo trace generator.
-The vendored Kafka JARs are Flink client dependencies, not Kafka Connect
-components; the Kafka cluster does not need Kafka Connect enabled.
+The Kafka connector is a Flink client dependency, not Kafka Connect. Maven
+resolves it while building the image; the Kafka cluster does not need Kafka
+Connect enabled.
+
+The Dockerfile's default `runtime` target is deliberately smaller than the
+Compose development target. It contains Python, PyFlink, dependencies resolved
+from the package metadata, the Kafka connector, and the private serializer,
+but no application source or test tooling. Both deployable targets default to
+the non-root `flink` user and contain no root setup step. OpenShift may replace
+that user with a namespace allocated UID; writable image paths are group-owned
+for that arbitrary-UID model.
 
 Input topic:
 
@@ -82,9 +110,9 @@ Output topics:
 python scripts\validate_registry.py
 python scripts\generate_entities.py --check
 python scripts\generate_collector_config.py --check
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m ruff check .
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m pyright
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m pytest
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m ruff check .
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m pyright
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m pytest
 docker compose config
 ```
 

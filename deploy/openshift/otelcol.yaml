@@ -139,7 +139,7 @@ exporters:
         password: ${env:KAFKA_SASL_PASSWORD}
         mechanism: SCRAM-SHA-256
     producer:
-      compression: zstd
+      compression: gzip
       required_acks: -1
       allow_auto_topic_creation: false
     sending_queue:

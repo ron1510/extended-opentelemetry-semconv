@@ -104,7 +104,8 @@ python scripts\validate_registry.py
 
 Review generated changes carefully. A semconv upgrade can change:
 
-- generated entity classes under `src/extended_otel_semconv/generated`;
+- generated entity classes under
+  `packages/extended-opentelemetry-semconv/src/extended_otel_semconv/generated`;
 - Collector `service_graph` dimensions in `deploy/local/otelcol.yaml`;
 - validation failures if an extension now redefines something upstream added;
 - graph shape if upstream added or removed identifying entity attributes.

@@ -10,14 +10,20 @@ from pathlib import Path
 from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "packages" / "extended-opentelemetry-semconv" / "src"))
 
 from extended_otel_semconv.registry.model import AttributeDefinition, EntityAttributeRef, EntityDefinition  # noqa: E402
 from extended_otel_semconv.registry.validation import load_model_registry, validate_extension_model  # noqa: E402
 
 UPSTREAM_MODEL = ROOT / "upstream" / "otel-semconv" / "v1.43.0" / "model"
 EXTENSION_MODEL = ROOT / "model" / "extensions"
-GENERATED_DIR = ROOT / "src" / "extended_otel_semconv" / "generated"
+GENERATED_DIR = (
+    ROOT / "packages" / "extended-opentelemetry-semconv" / "src" / "extended_otel_semconv" / "generated"
+)
+PACKAGE_LOCK = (
+    ROOT / "packages" / "extended-opentelemetry-semconv" / "src" / "extended_otel_semconv" / "metadata"
+    / "otel-semconv.lock.json"
+)
 
 
 class GeneratedEntity(NamedTuple):
@@ -56,6 +62,7 @@ def generate_files() -> dict[Path, str]:
 
     files: dict[Path, str] = {
         GENERATED_DIR / "__init__.py": _render_package_init(generated_entities, domains),
+        PACKAGE_LOCK: (ROOT / "upstream" / "otel-semconv.lock.json").read_text(encoding="utf-8"),
     }
     for domain in domains:
         domain_entities = tuple(entity for entity in generated_entities if entity.domain == domain)

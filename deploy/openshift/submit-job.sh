@@ -26,4 +26,4 @@ exec flink run \
   -d \
   -m servicegraph-flink-jobmanager:8081 \
   -p 3 \
-  -py /app/src/extended_otel_semconv/services/interaction_diff/cli.py
+  -py /workspace/apps/otel-servicegraph-diff/src/otel_servicegraph_diff/cli.py

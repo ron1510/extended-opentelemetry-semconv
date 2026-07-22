@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "packages" / "extended-opentelemetry-semconv" / "src"))
 
 from extended_otel_semconv.registry.validation import validate_extension_model  # noqa: E402
 

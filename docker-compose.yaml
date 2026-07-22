@@ -53,8 +53,11 @@ services:
     mem_limit: 512m
 
   flink-jobmanager:
-    build: .
-    image: extended-otel-flink:2.2.1
+    build:
+      context: .
+      dockerfile: apps/otel-servicegraph-diff/Dockerfile
+      target: development
+    image: extended-otel-flink-dev:2.2.1
     command: jobmanager
     ports:
       - "8081:8081"
@@ -77,7 +80,7 @@ services:
     mem_limit: 1280m
 
   flink-taskmanager:
-    image: extended-otel-flink:2.2.1
+    image: extended-otel-flink-dev:2.2.1
     command: taskmanager
     depends_on:
       flink-jobmanager:
@@ -102,7 +105,7 @@ services:
     mem_limit: 1792m
 
   interaction-diff:
-    image: extended-otel-flink:2.2.1
+    image: extended-otel-flink-dev:2.2.1
     depends_on:
       kafka-topics:
         condition: service_completed_successfully
@@ -117,7 +120,7 @@ services:
       - -m
       - flink-jobmanager:8081
       - -py
-      - /app/src/extended_otel_semconv/services/interaction_diff/cli.py
+      - /workspace/apps/otel-servicegraph-diff/src/otel_servicegraph_diff/cli.py
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       INTERACTION_DIFF_INPUT_TOPIC: otel.servicegraph.metrics
@@ -131,7 +134,7 @@ services:
     restart: "no"
 
   demo:
-    image: extended-otel-flink:2.2.1
+    image: extended-otel-flink-dev:2.2.1
     command: python -m extended_otel_semconv_devtools.telemetry.demo
     depends_on:
       otelcol:

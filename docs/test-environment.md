@@ -9,15 +9,15 @@ servicegraph parsing, interaction diff behavior, and Docker Compose wiring.
 python scripts\validate_registry.py
 python scripts\generate_entities.py --check
 python scripts\generate_collector_config.py --check
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m pytest
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m pytest
 docker compose config
 ```
 
 Mandatory static checks run in the pinned Python 3.12/Flink image:
 
 ```powershell
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m ruff check .
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink:2.2.1 python -m pyright
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m ruff check .
+docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m pyright
 ```
 
 ## Runtime Stack
@@ -58,7 +58,7 @@ lifecycle:
 powershell -ExecutionPolicy Bypass -File scripts\smoke_restart.ps1
 ```
 
-Pass `-SkipBuild` after building `extended-otel-flink:2.2.1` to reuse the local
+Pass `-SkipBuild` after building `extended-otel-flink-dev:2.2.1` to reuse the local
 image.
 
 ## Stress Helpers
