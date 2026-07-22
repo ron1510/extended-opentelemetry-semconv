@@ -1,0 +1,110 @@
+{{- $dimensionModel := .Files.Get "files/dimensions.yaml" | fromYaml -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "servicegraph-collector.fullname" . }}-backend
+  labels:
+    {{- include "servicegraph-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: servicegraph-backend
+data:
+  config.yaml: |
+    extensions:
+      health_check:
+        endpoint: localhost:13133
+      file_storage/queue:
+        directory: /var/lib/otelcol/queue
+        create_directory: true
+        timeout: 10s
+        compaction:
+          on_start: true
+          on_rebound: false
+          directory: /var/lib/otelcol/queue
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+            {{- if .Values.internalTls.enabled }}
+            tls:
+              cert_file: /etc/otelcol/internal-tls/{{ .Values.internalTls.certificateKey }}
+              key_file: /etc/otelcol/internal-tls/{{ .Values.internalTls.privateKeyKey }}
+            {{- end }}
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      batch/traces:
+        timeout: 1s
+        send_batch_size: 256
+      batch/servicegraph_metrics:
+        timeout: 1s
+        send_batch_size: 256
+        send_batch_max_size: 512
+    connectors:
+      service_graph:
+        dimensions:
+          {{- range $dimensionModel.dimensions }}
+          - {{ . }}
+          {{- end }}
+        virtual_node_peer_attributes: []
+        database_name_attributes: [db.namespace, db.name]
+        store:
+          ttl: {{ .Values.backend.serviceGraph.storeTtl }}
+          max_items: {{ .Values.backend.serviceGraph.storeMaxItems }}
+        metrics_flush_interval: {{ .Values.backend.serviceGraph.metricsFlushInterval }}
+    exporters:
+      kafka/servicegraph_metrics:
+        brokers:
+          {{- range .Values.streamContract.kafka.brokers }}
+          - {{ . | quote }}
+          {{- end }}
+        metrics:
+          topic: {{ .Values.streamContract.topics.servicegraphMetrics | quote }}
+          encoding: otlp_json
+        {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
+        tls:
+          insecure: false
+          insecure_skip_verify: false
+          ca_file: /etc/kafka/tls/{{ .Values.streamContract.kafka.security.caKey }}
+        auth:
+          sasl:
+            username: ${env:KAFKA_SASL_USERNAME}
+            password: ${env:KAFKA_SASL_PASSWORD}
+            mechanism: {{ .Values.streamContract.kafka.security.saslMechanism }}
+        {{- end }}
+        producer:
+          compression: gzip
+          required_acks: -1
+          allow_auto_topic_creation: false
+        sending_queue:
+          enabled: true
+          storage: file_storage/queue
+          sizer: items
+          num_consumers: 4
+          queue_size: 10000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 0s
+    service:
+      extensions: [health_check, file_storage/queue]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch/traces]
+          exporters: [service_graph]
+        metrics/servicegraph:
+          receivers: [service_graph]
+          processors: [memory_limiter, batch/servicegraph_metrics]
+          exporters: [kafka/servicegraph_metrics]
+      telemetry:
+        metrics:
+          level: detailed
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888

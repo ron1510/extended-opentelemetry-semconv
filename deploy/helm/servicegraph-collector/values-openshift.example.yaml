@@ -1,0 +1,41 @@
+image:
+  repository: artifactory.example.internal/team/opentelemetry-collector-contrib
+  tag: ""
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+imagePullSecrets:
+  - name: internal-registry-pull
+
+streamContract:
+  kafka:
+    brokers:
+      - kafka.example.internal:9093
+    security:
+      protocol: SASL_SSL
+      existingSecret: servicegraph-kafka-auth
+
+internalTls:
+  enabled: true
+  existingSecret: servicegraph-collector-internal-tls
+
+backend:
+  persistence:
+    storageClass: internal-rwo
+
+networkPolicy:
+  enabled: true
+  routerIngress:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: team
+  kafkaEgress:
+    cidrs:
+      - 192.0.2.0/24
+    ports:
+      - 9093
+  dnsEgress:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: openshift-dns
+    podSelector:
+      matchLabels:
+        dns.operator.openshift.io/daemonset-dns: default

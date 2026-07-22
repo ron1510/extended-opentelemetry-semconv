@@ -1,134 +1,112 @@
 # Extended OpenTelemetry Semantic Conventions
 
-This project extends the OpenTelemetry semantic convention entity registry
-without redefining entities that OpenTelemetry already owns.
-
-The runtime path is a streaming interaction diff engine:
+This project extends the OpenTelemetry semantic entity model and turns
+service-graph telemetry into a typed, current interaction view.
 
 ```text
 OTLP traces
   -> OpenTelemetry Collector service_graph connector
   -> Kafka topic otel.servicegraph.metrics
-  -> PyFlink interaction diff state
-  -> Kafka topic graph.interactions.events
-  -> NiFi / MongoDB materialization outside this repo
+  -> PyFlink keyed interaction state and diffing
+  -> Kafka topics graph.interactions.events / graph.interactions.dlq
+  -> NiFi / MongoDB materialization outside this repository
 ```
 
-Postgres is intentionally not part of the runtime.
+Postgres and Kafka Connect are intentionally not part of the runtime.
 
-## Published Packages
+## Project Status
 
-- `extended-opentelemetry-semconv` owns the registry, generated Pydantic
-  entities, relationships, OTLP observation parsing, and pure interaction diff
-  models.
-- `otel-servicegraph-diff` owns validated runtime settings and the PyFlink/Kafka
-  application wiring.
+The semantic library and v1 interaction diff engine are feature-complete and
+verified through a source-free local Collector, Kafka, and Flink lifecycle.
+Internal artifact configuration, production wheel delivery, real-cluster
+validation, and downstream NiFi/MongoDB materialization remain to be completed.
 
-The semantic package has no PyFlink, Kafka client, or environment-settings
-dependency. The Flink application depends on the semantic package through its
-published Python package contract.
+The standalone Collector Helm chart implements a trace-ID-routing tier feeding
+two stateful service-graph Collector replicas through stable ordinal DNS and a
+headless Service. Internal image, Kafka, TLS, storage, and NetworkPolicy values
+still require configuration and real-cluster validation. The older raw
+OpenShift manifest remains only as a single-replica reference baseline.
+
+## Packages
+
+- `extended-opentelemetry-semconv` owns the OTel-style registry, generated
+  Pydantic entities, relationships, dimensions, OTLP parsing, interaction
+  contracts, hashing, expiry, and pure state transitions.
+- `otel-servicegraph-diff` owns validated runtime settings and PyFlink/Kafka
+  wiring.
+
+The semantic package imports without PyFlink or a Kafka client.
+
+## Supported Runtime
+
+- Python 3.12.13
+- Java 11
+- Apache Flink and PyFlink 2.2.1
+- Flink SQL Kafka connector 5.0.0-2.2
+- OpenTelemetry Collector Contrib 0.156.0
+- Pinned OpenTelemetry semantic model 1.43.0
+
+## Developer Documentation
+
+- [Architecture and contracts](docs/architecture.md)
+- [Air-gapped build and release](docs/build-and-release.md)
+- [Deployment and operations](docs/deployment-and-operations.md)
+- [Limitations and roadmap](docs/limitations-and-roadmap.md)
+- [Engineering handoff](docs/handoff.md)
+- [OpenShift manifest usage](deploy/openshift/README.md)
+- [Standalone Collector Helm chart](deploy/helm/servicegraph-collector/README.md)
 
 ## Repository Layout
 
-- `upstream/otel-semconv/v1.43.0/model/` is the pinned upstream OpenTelemetry model snapshot.
-- `model/extensions/` contains extension attributes, entities, and relationships.
-- `packages/extended-opentelemetry-semconv/` is the independently buildable semantic library.
-- `apps/otel-servicegraph-diff/` is the independently buildable PyFlink application.
-- `tools/extended_otel_semconv_devtools/` contains local telemetry and Kafka helpers.
-- `deploy/local/otelcol.yaml` is generated from the merged registry.
-- `deploy/openshift/` contains the air-gapped, namespace-scoped OpenShift deployment.
-- `scripts/` contains repository validation and artifact generation utilities.
-- `tests/` contains semantic-library and architecture tests; application tests
-  live beside the application.
+- `upstream/otel-semconv/v1.43.0/model/`: pinned upstream OTel model.
+- `model/extensions/`: project attributes, entities, and relationships in OTel
+  model YAML.
+- `packages/extended-opentelemetry-semconv/`: independently published semantic
+  library.
+- `apps/otel-servicegraph-diff/`: independently published PyFlink application
+  and thin runtime image.
+- `deploy/`: local topology, standalone Collector chart, shared stream
+  contract, kind fixture, and legacy OpenShift starting point.
+- `scripts/`: generation, validation, artifact, and lifecycle tooling.
+- `tools/`: development-only telemetry, Kafka, and confidence helpers.
 
-## Package Builds
+## Generate And Validate
 
-Build the packages independently with any PEP 517 frontend:
-
-```powershell
-python -m pip wheel --no-deps --wheel-dir dist packages\extended-opentelemetry-semconv
-python -m pip wheel --no-deps --wheel-dir dist apps\otel-servicegraph-diff
-```
-
-For local development, install both as editable packages:
-
-```powershell
-python -m pip install -e packages\extended-opentelemetry-semconv -e apps\otel-servicegraph-diff
-```
-
-## Generate
-
-```powershell
-python scripts\generate_entities.py
-python scripts\generate_collector_config.py
-```
-
-Check generated files:
-
-```powershell
-python scripts\generate_entities.py --check
-python scripts\generate_collector_config.py --check
-```
-
-## Local Pipeline
-
-The supported runtime is Python `3.12.13`, Java `11`, Apache Flink/PyFlink
-`2.2.1`, and the Flink Kafka connector `5.0.0-2.2`. Compose builds the
-Dockerfile's local development target and runs the same behavior as the
-production application:
-
-```powershell
-docker compose up --build
-```
-
-The stack starts Redpanda Kafka, the OpenTelemetry Collector, Flink
-JobManager/TaskManager, the interaction diff job, and a demo trace generator.
-The Kafka connector is a Flink client dependency, not Kafka Connect. Maven
-resolves it while building the image; the Kafka cluster does not need Kafka
-Connect enabled.
-
-The Dockerfile's default `runtime` target is deliberately smaller than the
-Compose development target. It contains Python, PyFlink, dependencies resolved
-from the package metadata, the Kafka connector, and the private serializer,
-but no application source or test tooling. Both deployable targets default to
-the non-root `flink` user and contain no root setup step. OpenShift may replace
-that user with a namespace allocated UID; writable image paths are group-owned
-for that arbitrary-UID model.
-
-Input topic:
-
-- `otel.servicegraph.metrics`
-
-Output topics:
-
-- `graph.interactions.events`
-- `graph.interactions.dlq`
-
-## Validate
+Use the supported Python 3.12 environment or the development image:
 
 ```powershell
 python scripts\validate_registry.py
 python scripts\generate_entities.py --check
 python scripts\generate_collector_config.py --check
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m ruff check .
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m pyright
-docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2.1 python -m pytest
-docker compose config
+python -m ruff check .
+python -m pyright
+python -m pytest
+docker compose config --quiet
+docker run --rm -v "${PWD}:/workspace" -w /workspace alpine/helm:3.17.3 `
+  lint deploy/helm/servicegraph-collector --strict
 ```
 
-Run the complete upsert/DLQ/delete lifecycle smoke test with:
+Run the complete source-free upsert, duplicate-suppression, DLQ, expiry/delete,
+and recreation lifecycle with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\smoke_compose.ps1
 ```
 
-## OpenShift
+Run the chart itself in kind with `scripts\kind_up.ps1`, then verify paired
+traces reach Kafka with `scripts\kind_smoke.ps1`. These scripts expect `kind`,
+`kubectl`, `helm`, and the required images to be available from approved local
+or internal mirrors.
 
-The production starting point uses Flink native Kubernetes HA, an RWX
-checkpoint volume, a persistent Collector queue, restricted OpenShift security
-contexts, and external Kafka over SCRAM-SHA-256/TLS. It requires no CRDs or
-cluster-admin permissions.
+## Build Artifacts
 
-See `deploy/openshift/README.md` for required mock-value replacement,
-Artifactory image promotion, secret creation, server-side validation, and
-operational recovery procedures.
+Build both wheels:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_wheels.ps1
+```
+
+The thin runtime image contains Python, PyFlink, runtime dependencies, the
+Kafka connector, and the private Java 11 serializers. It excludes application
+source and wheels; production wheel delivery belongs to the internal deployment
+integration.

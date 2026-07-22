@@ -1,0 +1,41 @@
+{{- if .Values.monitoring.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "servicegraph-collector.fullname" . }}-router-metrics
+  labels:
+    {{- include "servicegraph-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+  {{- with .Values.monitoring.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    {{- include "servicegraph-collector.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+  ports:
+    - name: metrics
+      port: 8888
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "servicegraph-collector.fullname" . }}-backend-metrics
+  labels:
+    {{- include "servicegraph-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: servicegraph-backend
+  {{- with .Values.monitoring.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    {{- include "servicegraph-collector.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: servicegraph-backend
+  ports:
+    - name: metrics
+      port: 8888
+      targetPort: metrics
+{{- end }}

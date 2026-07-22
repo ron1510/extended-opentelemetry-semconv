@@ -1,0 +1,17 @@
+# Credential-free contract shared by the Collector and Flink releases.
+streamContract:
+  version: "1.0"
+  kafka:
+    brokers:
+      - kafka.example.internal:9093
+    security:
+      protocol: SASL_SSL
+      saslMechanism: SCRAM-SHA-256
+      existingSecret: servicegraph-kafka-auth
+      usernameKey: username
+      passwordKey: password
+      caKey: ca.crt
+  topics:
+    servicegraphMetrics: otel.servicegraph.metrics
+    interactionEvents: graph.interactions.events
+    interactionDlq: graph.interactions.dlq

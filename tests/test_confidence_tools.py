@@ -62,7 +62,7 @@ def test_percentile_uses_nearest_rank() -> None:
 
 
 def test_collector_servicegraph_metrics_are_batched_for_kafka_efficiency() -> None:
-    config = (Path(__file__).resolve().parents[1] / "deploy" / "local" / "otelcol.yaml").read_text(
+    config = (Path(__file__).resolve().parents[1] / "deploy" / "local" / "otelcol-backend.yaml").read_text(
         encoding="utf-8"
     )
 

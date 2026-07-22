@@ -1,4 +1,10 @@
-# OpenShift Deployment
+# Legacy OpenShift Deployment
+
+> **Reference only:** the Collector in this Kustomize bundle is the original
+> single-replica baseline. New Collector deployments should use the
+> [standalone Helm chart](../helm/servicegraph-collector/README.md), which
+> implements trace-ID routers and two stable service-graph backends. The Flink
+> resources remain a starting point for integration with the internal HA chart.
 
 This bundle is a namespace-scoped production starting point for OpenShift. It
 uses standard Kubernetes APIs only: no CRDs, operator, Route, ClusterRole, or
@@ -119,8 +125,8 @@ submitted again.
 
 ## Operations
 
-- Keep the Collector at one replica. The service graph connector is stateful;
-  scaling requires trace-ID-sticky routing before the Collector tier.
+- Keep this legacy Collector at one replica. Do not scale it directly; migrate
+  to the standalone chart for trace-ID routing and two service-graph backends.
 - The Collector queue uses a separate RWO PVC because its file storage backend
   is not safe on shared network filesystems.
 - The Flink HA metadata, checkpoints, and savepoints use the RWX PVC.

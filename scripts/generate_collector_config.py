@@ -1,4 +1,4 @@
-"""Generate the single local/prod-shaped Collector config from the merged registry."""
+"""Generate Collector configs and chart inputs from the merged registry."""
 
 from __future__ import annotations
 
@@ -19,7 +19,9 @@ from extended_otel_semconv.registry.validation import load_model_registry, valid
 UPSTREAM_MODEL = ROOT / "upstream" / "otel-semconv" / "v1.43.0" / "model"
 EXTENSION_MODEL = ROOT / "model" / "extensions"
 COLLECTOR_CONFIG = ROOT / "deploy" / "local" / "otelcol.yaml"
+LOCAL_BACKEND_CONFIG = ROOT / "deploy" / "local" / "otelcol-backend.yaml"
 OPENSHIFT_COLLECTOR_CONFIG = ROOT / "deploy" / "openshift" / "otelcol.yaml"
+HELM_DIMENSIONS = ROOT / "deploy" / "helm" / "servicegraph-collector" / "files" / "dimensions.yaml"
 
 
 def main() -> int:
@@ -28,8 +30,12 @@ def main() -> int:
     args = parser.parse_args()
 
     outputs = {
-        COLLECTOR_CONFIG: render_collector_config(),
+        COLLECTOR_CONFIG: render_router_config(
+            ["otelcol-backend-0:4317", "otelcol-backend-1:4317"],
+        ),
+        LOCAL_BACKEND_CONFIG: render_collector_config(),
         OPENSHIFT_COLLECTOR_CONFIG: render_openshift_collector_config(),
+        HELM_DIMENSIONS: render_helm_dimensions(),
     }
     if args.check:
         return max(_check_file(path, content) for path, content in outputs.items())
@@ -84,6 +90,90 @@ def render_collector_config() -> str:
     return yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
 
 
+def render_router_config(hostnames: list[str]) -> str:
+    config: dict[str, Any] = {
+        "extensions": {
+            "health_check": {
+                "endpoint": "localhost:13133",
+            },
+        },
+        "receivers": {
+            "otlp": {
+                "protocols": {
+                    "grpc": {"endpoint": "0.0.0.0:4317"},
+                    "http": {"endpoint": "0.0.0.0:4318"},
+                },
+            },
+        },
+        "processors": {
+            "memory_limiter": {
+                "check_interval": "1s",
+                "limit_percentage": 80,
+                "spike_limit_percentage": 20,
+            },
+            "batch/traces": {
+                "timeout": "1s",
+                "send_batch_size": 256,
+            },
+        },
+        "exporters": {
+            "load_balancing": {
+                "routing_key": "traceID",
+                "protocol": {
+                    "otlp": {
+                        "timeout": "5s",
+                        "tls": {"insecure": True},
+                        "sending_queue": {
+                            "enabled": True,
+                            "sizer": "items",
+                            "queue_size": 10000,
+                        },
+                        "retry_on_failure": {
+                            "enabled": True,
+                            "initial_interval": "1s",
+                            "max_interval": "30s",
+                            "max_elapsed_time": "0s",
+                        },
+                    },
+                },
+                "resolver": {
+                    "static": {
+                        "hostnames": hostnames,
+                    },
+                },
+                "timeout": "10s",
+                "sending_queue": {
+                    "enabled": True,
+                    "sizer": "items",
+                    "queue_size": 100000,
+                },
+                "retry_on_failure": {
+                    "enabled": True,
+                    "initial_interval": "1s",
+                    "max_interval": "30s",
+                    "max_elapsed_time": "0s",
+                },
+            },
+        },
+        "service": {
+            "extensions": ["health_check"],
+            "pipelines": {
+                "traces": {
+                    "receivers": ["otlp"],
+                    "processors": ["memory_limiter", "batch/traces"],
+                    "exporters": ["load_balancing"],
+                },
+            },
+            "telemetry": _telemetry_config(),
+        },
+    }
+    return yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
+
+
+def render_helm_dimensions() -> str:
+    return yaml.safe_dump({"dimensions": _service_graph_dimensions()}, sort_keys=False, default_flow_style=False)
+
+
 def render_openshift_collector_config() -> str:
     dimensions = _service_graph_dimensions()
     config = _base_collector_config(dimensions)
@@ -94,6 +184,7 @@ def render_openshift_collector_config() -> str:
         "compaction": {
             "on_start": True,
             "on_rebound": False,
+            "directory": "/var/lib/otelcol/queue",
         },
     }
     config["exporters"] = {
@@ -208,6 +299,26 @@ def _base_collector_config(dimensions: list[str]) -> dict[str, Any]:
         },
     }
     return config
+
+
+def _telemetry_config() -> dict[str, Any]:
+    return {
+        "metrics": {
+            "level": "detailed",
+            "readers": [
+                {
+                    "pull": {
+                        "exporter": {
+                            "prometheus": {
+                                "host": "0.0.0.0",
+                                "port": 8888,
+                            },
+                        },
+                    },
+                },
+            ],
+        },
+    }
 
 
 def _check_file(path: Path, expected: str) -> int:

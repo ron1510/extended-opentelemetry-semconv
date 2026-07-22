@@ -1,0 +1,26 @@
+backend:
+  persistence:
+    enabled: false
+
+streamContract:
+  kafka:
+    brokers:
+      - redpanda.servicegraph-system.svc:9092
+    security:
+      protocol: PLAINTEXT
+      existingSecret: ""
+
+networkPolicy:
+  enabled: false
+
+test:
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  image:
+    repository: redpandadata/redpanda
+    tag: v24.3.5
+    pullPolicy: IfNotPresent

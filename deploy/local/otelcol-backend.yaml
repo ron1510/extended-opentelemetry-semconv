@@ -1,14 +1,6 @@
 extensions:
   health_check:
     endpoint: localhost:13133
-  file_storage/queue:
-    directory: /var/lib/otelcol/queue
-    create_directory: true
-    timeout: 10s
-    compaction:
-      on_start: true
-      on_rebound: false
-      directory: /var/lib/otelcol/queue
 receivers:
   otlp:
     protocols:
@@ -126,38 +118,22 @@ connectors:
 exporters:
   kafka/servicegraph_metrics:
     brokers:
-    - ${env:KAFKA_BOOTSTRAP_SERVERS}
+    - kafka:9092
     metrics:
-      topic: ${env:INTERACTION_DIFF_INPUT_TOPIC}
+      topic: otel.servicegraph.metrics
       encoding: otlp_json
-    tls:
-      insecure: false
-      insecure_skip_verify: false
-      ca_file: /etc/kafka/tls/ca.crt
-    auth:
-      sasl:
-        username: ${env:KAFKA_SASL_USERNAME}
-        password: ${env:KAFKA_SASL_PASSWORD}
-        mechanism: SCRAM-SHA-256
     producer:
       compression: gzip
-      required_acks: -1
-      allow_auto_topic_creation: false
     sending_queue:
       enabled: true
-      storage: file_storage/queue
       sizer: items
-      num_consumers: 4
-      queue_size: 10000
+      queue_size: 100000
     retry_on_failure:
       enabled: true
-      initial_interval: 1s
-      max_interval: 30s
       max_elapsed_time: 0s
 service:
   extensions:
   - health_check
-  - file_storage/queue
   pipelines:
     traces:
       receivers:
@@ -175,3 +151,12 @@ service:
       - batch/servicegraph_metrics
       exporters:
       - kafka/servicegraph_metrics
+  telemetry:
+    metrics:
+      level: detailed
+      readers:
+      - pull:
+          exporter:
+            prometheus:
+              host: 0.0.0.0
+              port: 8888

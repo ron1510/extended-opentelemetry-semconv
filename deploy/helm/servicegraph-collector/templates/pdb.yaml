@@ -1,0 +1,27 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "servicegraph-collector.fullname" . }}-router
+  labels:
+    {{- include "servicegraph-collector.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "servicegraph-collector.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: router
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "servicegraph-collector.fullname" . }}-backend
+  labels:
+    {{- include "servicegraph-collector.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "servicegraph-collector.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: servicegraph-backend
+{{- end }}

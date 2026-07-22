@@ -25,7 +25,9 @@ docker run --rm -v "${PWD}:/workspace" -w /workspace extended-otel-flink-dev:2.2
 `docker compose up --build` starts:
 
 - `kafka`: Redpanda Kafka-compatible broker on `9092`.
-- `otelcol`: Collector receiving OTLP on `4317` and `4318`.
+- `otelcol`: stateless trace-ID router receiving OTLP on `4317` and `4318`.
+- `otelcol-backend-0` and `otelcol-backend-1`: stateful service-graph
+  connectors receiving routed spans.
 - `flink-jobmanager`: local Flink JobManager UI on `8081`.
 - `flink-taskmanager`: local Flink worker.
 - `interaction-diff`: PyFlink interaction diff job.
@@ -46,9 +48,22 @@ job, verifies keyed upsert and delete events, verifies malformed input on the
 DLQ, and removes containers and local checkpoint volumes.
 
 Compose checkpoints use a shared local volume. A production Kubernetes
-deployment must use durable object-storage checkpoints, resource
-requests/limits, readiness/liveness probes, disruption controls, and
-trace-ID-sticky routing before a scaled servicegraph Collector tier.
+deployment must use durable object-storage checkpoints and internal resource,
+storage, security, and monitoring values. The standalone Collector chart
+provides the scaled trace-ID routing topology.
+
+Exercise the exact chart in kind:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\kind_up.ps1
+powershell -ExecutionPolicy Bypass -File scripts\kind_smoke.ps1
+```
+
+The scripts do not fetch dependencies. `kind`, `kubectl`, `helm`, the supported
+Python environment, and the Collector and Redpanda images must already exist
+through local or approved internal mirrors. The kind node is pinned to Kubernetes 1.29.12 to
+avoid silently changing the local API and cgroup requirements with each kind
+release.
 
 The failure-recovery smoke test checkpoints an interaction, kills the
 TaskManager, and verifies the restored state completes one upsert/delete
