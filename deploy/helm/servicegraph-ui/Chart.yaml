@@ -1,0 +1,9 @@
+apiVersion: v2
+name: servicegraph-ui
+description: Flink-authoritative interaction graph projection and UI
+type: application
+version: 0.1.2
+appVersion: "0.1.2"
+kubeVersion: ">=1.25.0-0"
+annotations:
+  artifacthub.io/license: Apache-2.0

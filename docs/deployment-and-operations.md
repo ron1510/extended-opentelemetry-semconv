@@ -1,351 +1,376 @@
 # Deployment And Operations
 
-## Deployment Status
+## Prerequisites
 
-The standalone Collector Helm chart implements the production topology: two
-stateless trace-ID routers feed exactly two stateful service-graph Collector
-replicas addressed by stable ordinal DNS behind a headless Service. The chart
-uses standard namespace-scoped Kubernetes APIs and requires no CRDs,
-ClusterRole, Route, Flink operator, or cluster-admin permission.
+- Kubernetes 1.25 or newer
+- Helm 3
+- two pre-created topics on Kafka-compatible brokers
+- an RWX storage class or an existing RWX claim
+- internally available Collector, Flink runtime, and optional demo and UI images
+- an existing Kafka credentials Secret when using `SASL_SSL`
 
-Internal image references, Kafka/TLS settings, storage classes, NetworkPolicy
-selectors/CIDRs, and operational validation are still required before
-production. The older raw OpenShift resources remain a single-replica reference
-baseline; they are not the recommended Collector deployment. See
-[Limitations and roadmap](limitations-and-roadmap.md).
+The charts use standard Kubernetes resources and create no CRDs. Every workload
+runs as a non-root user with privilege escalation disabled, all capabilities
+dropped, a read-only root filesystem, and `RuntimeDefault` seccomp.
 
-## Implemented Scaled Collector Design
+## Installation
 
-```mermaid
-flowchart TB
-    apps["Application pods"]
-    routerService["ClusterIP: OTLP routing entry point"]
-    routers["Stateless routing Collector tier"]
-    headless["Headless Service: backend discovery"]
-    sg0["Service-graph Collector replica 0"]
-    sg1["Service-graph Collector replica 1"]
-    kafka["External Kafka"]
-    flink["Flink interaction diff job"]
+```powershell
+helm upgrade --install servicegraph deploy/helm/servicegraph-collector `
+  --namespace servicegraph-system --create-namespace `
+  --values internal-collector-values.yaml
 
-    apps --> routerService --> routers
-    routers -- "routing_key: traceID" --> headless
-    headless --> sg0
-    headless --> sg1
-    sg0 --> kafka
-    sg1 --> kafka
-    kafka --> flink
-    flink --> kafka
+helm upgrade --install servicegraph-flink deploy/helm/servicegraph-flink `
+  --namespace servicegraph-system `
+  --values internal-flink-values.yaml
+
+helm upgrade --install servicegraph-ui deploy/helm/servicegraph-ui `
+  --namespace servicegraph-system `
+  --values internal-ui-values.yaml
+
+helm upgrade --install servicegraph-demo deploy/helm/servicegraph-demo `
+  --namespace servicegraph-system `
+  --values internal-demo-values.yaml
 ```
 
-The headless Service provides stable StatefulSet DNS, but does not provide
-stickiness by itself. Every router uses `routing_key: traceID` and the same
-static ring of two ordinal DNS names. A backend restart therefore retains its
-logical ring identity; router queues and retries continue targeting that name
-while it recovers. The values schema fixes the first production version at
-exactly two service-graph Collector replicas.
+Collector values must configure the mirrored image and `streamContract` Kafka
+brokers, security, and topic names. Flink values must configure `image.ref`,
+the same stream contract, and either `storage.storageClassName` or
+`storage.existingClaim`. The optional UI values configure its image, the same
+interaction-events topic, and its SQLite claim.
 
-This design is implemented by the standalone Helm chart under
-`deploy/helm/servicegraph-collector`. Compose uses the same split with the
-stable local names `otelcol-backend-0` and `otelcol-backend-1`; kind deploys the
-actual chart.
+The demo is optional and only needs the Collector router's OTLP HTTP endpoint.
+It gradually grows and rotates synthetic service edges. Retired edges disappear
+from the UI only after Flink applies its configured staleness policy and emits
+delete commands.
 
-## Legacy Raw Manifest Topology
+Credentials are read from the Secret named by
+`streamContract.kafka.security.existingSecret`. Do not place credentials in
+values files. Both charts support `PLAINTEXT` for trusted development
+environments and `SASL_SSL` with SCRAM-SHA-256 for internal deployments.
 
-```mermaid
-flowchart TB
-    apps["Application pods"]
-    collectorService["ClusterIP: servicegraph-otelcol"]
-    collector["Collector Deployment, 1 replica"]
-    kafka["External Kafka"]
-    jmService["ClusterIP: servicegraph-flink-jobmanager"]
-    jm["Flink JobManagers"]
-    tm["Flink TaskManagers"]
-    state["RWX Flink state PVC"]
-    queue["RWO Collector queue PVC"]
-    submitter["Submission Job"]
+## Local Kind E2E
 
-    apps --> collectorService --> collector
-    collector --> kafka
-    kafka --> tm
-    tm --> kafka
-    jmService --> jm
-    submitter --> jmService
-    jm --> state
-    tm --> state
-    collector --> queue
+The local environment uses independent Helm releases:
+
+- `streaming`: the official Redpanda chart, needed only when Kafka is not
+  already available
+- `collection`: the service-graph Collector chart
+- `processing`: the Flink Application Mode chart
+- `demo`: the optional synthetic trace producer chart
+- `visualization`: the optional UI projection chart
+
+It uses the same `extended-otel-flink-runtime:2.2.1-java11` image that is
+published for deployment. Local Kafka addresses and smaller resource settings
+are Helm values; there is no separate E2E image.
+
+Create an isolated Kind cluster and load the runtime image:
+
+```powershell
+$env:KUBECONFIG = Join-Path $env:TEMP "servicegraph-e2e-kubeconfig"
+
+docker build `
+  --tag extended-otel-flink-runtime:2.2.1-java11 `
+  --file apps/otel-servicegraph-diff/Dockerfile .
+
+docker build `
+  --tag extended-otel-servicegraph-ui:0.1.2 `
+  --file apps/servicegraph-ui/Dockerfile .
+
+docker build `
+  --tag extended-otel-servicegraph-demo:0.1.1 `
+  --file apps/servicegraph-demo/Dockerfile .
+
+kind create cluster `
+  --name servicegraph-e2e `
+  --image kindest/node:v1.32.2 `
+  --kubeconfig $env:KUBECONFIG `
+  --wait 5m
+
+kind load docker-image extended-otel-flink-runtime:2.2.1-java11 `
+  --name servicegraph-e2e
+kind load docker-image extended-otel-servicegraph-ui:0.1.2 `
+  --name servicegraph-e2e
+kind load docker-image extended-otel-servicegraph-demo:0.1.1 `
+  --name servicegraph-e2e
+
+kubectl create namespace servicegraph-e2e
 ```
 
-### Legacy Collector
+Install a minimal single-broker Redpanda release and create the two topics:
 
-The raw `deploy/openshift` Collector deployment has one replica and uses `Recreate`. Its
-ordinary `ClusterIP` service exposes OTLP gRPC 4317 and OTLP HTTP 4318. The
-single replica preserves correct trace pairing, but it is now only a
-single-replica reference baseline. New deployments should use the standalone
-chart.
+```powershell
+helm repo add redpanda https://charts.redpanda.com
+helm repo update redpanda
 
-Both chart backend and legacy Collector configurations keep `memory_limiter`
-first, batch traces and metrics, export service-graph metrics through Kafka
-with retries, and store
-each persistent sending queue on a dedicated `ReadWriteOnce` volume. The chart
-uses one volume claim per StatefulSet replica. File storage must never be
-shared between Collector processes or placed on an unsafe shared filesystem.
+helm upgrade --install streaming redpanda/redpanda `
+  --version 26.1.3 `
+  --namespace servicegraph-e2e `
+  --set statefulset.replicas=1 `
+  --set statefulset.podAntiAffinity.type=soft `
+  --set console.enabled=false `
+  --set external.enabled=false `
+  --set tls.enabled=false `
+  --set tuning.tune_aio_events=false `
+  --set tests.enabled=false `
+  --set storage.persistentVolume.size=2Gi `
+  --set storage.persistentVolume.storageClass=standard `
+  --set config.cluster.default_topic_replications=1 `
+  --wait --timeout 10m
 
-### Flink
-
-The starting point defines JobManager and TaskManager deployments, a stable
-JobManager `ClusterIP` service, probes, resource requests and limits, topology
-spread constraints, and disruption budgets. Flink native Kubernetes HA uses
-namespace-scoped ConfigMaps through the `servicegraph-flink` service account.
-
-The example configuration uses a shared `ReadWriteMany` PVC for HA metadata,
-checkpoints, and savepoints. The internal platform team must confirm that its
-storage implementation provides the consistency, durability, throughput, and
-concurrent access required by Flink. Object storage or the existing internal
-HA chart may replace this baseline without changing domain logic.
-
-### Security
-
-Workloads run as non-root with runtime-default seccomp, no privilege
-escalation, all Linux capabilities dropped, and read-only root filesystems.
-Writable logs, temporary files, queue data, state, and application artifacts
-must be explicitly mounted.
-
-The Collector does not mount a service-account token. Flink mounts its token
-only because native Kubernetes HA must manage namespaced ConfigMaps. RBAC grants
-that service account only ConfigMap operations in its namespace.
-
-NetworkPolicies allow required in-namespace traffic and explicit egress. DNS
-names cannot be selected by standard egress NetworkPolicy, so mock Kafka and
-Kubernetes API CIDRs must be replaced with stable, platform-approved values.
-
-## Deployment Modes
-
-### Docker Compose
-
-Compose is the fastest complete developer path. The `otelcol` service is the
-public router, and `otelcol-backend-0` plus `otelcol-backend-1` run the stateful
-connectors. Redpanda, Flink, and the test producer complete the full local
-lifecycle. Compose service names are the static backend identities.
-
-### Kind
-
-Kind exercises the Kubernetes objects rather than Compose approximations.
-`scripts/kind_up.ps1` creates a disposable cluster, loads pre-existing local
-images, deploys a Redpanda fixture, and installs the exact standalone chart.
-`scripts/kind_smoke.ps1` sends paired spans through the router and confirms a
-request-total service-graph metric reaches Kafka. Neither script downloads
-tools or images implicitly, which keeps the workflow usable with internal
-mirrors.
-
-### OpenShift
-
-The Collector is a release independent from the Flink release. Apply the
-credential-free stream values contract, then layer organization-owned image,
-Kafka, TLS, storage, DNS, and NetworkPolicy values. The chart creates only
-namespace-scoped resources and does not mount a service-account token.
-`values-openshift.example.yaml` contains deliberately invalid placeholders and
-must not be deployed unchanged.
-
-## External Kafka
-
-Production Kafka is external and unchanged by this project. Kafka Connect is
-not required. The Kafka platform must create these topics before application
-startup:
-
-- `otel.servicegraph.metrics`
-- `graph.interactions.events`
-- `graph.interactions.dlq`
-
-The baseline assumes three partitions per topic and disables topic
-auto-creation. The platform team owns replication, retention, quotas, broker
-limits, ACLs, and availability. Application ACLs require Collector write access
-to the input topic and Flink read/write access to the input, output, and DLQ
-topics plus consumer-group access.
-
-The OpenShift example uses `SASL_SSL`, `SCRAM-SHA-256`, broker hostname
-verification, and a mounted PEM CA certificate. Secrets must be created outside
-Git with `username`, `password`, and `ca.crt` keys.
-
-The Collector and Flink releases share
-`deploy/contracts/servicegraph-stream.values.yaml`. This file contains brokers,
-security mode, Secret/key names, and all three topic names, but no credentials.
-The Collector chart consumes it directly. The Flink release maps the same
-values into `InteractionDiffConfig` environment variables. This contract keeps
-the releases independent without allowing their transport settings to drift.
-
-## Runtime Configuration
-
-`InteractionDiffConfig` is the source of truth. Settings are immutable and
-reject unknown or inconsistent values.
-
-| Environment variable | Default | Constraint and purpose |
-|---|---|---|
-| `KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092` | Non-empty comma-separated broker addresses |
-| `KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` | `PLAINTEXT` or `SASL_SSL` |
-| `KAFKA_SASL_MECHANISM` | unset | Must be `SCRAM-SHA-256` and is required with `SASL_SSL` |
-| `KAFKA_SASL_USERNAME` | unset | Required with `SASL_SSL`; supplied from a Secret |
-| `KAFKA_SASL_PASSWORD` | unset | Required with `SASL_SSL`; represented as a secret value |
-| `KAFKA_SSL_CA_FILE` | unset | Required PEM CA path with `SASL_SSL` |
-| `KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM` | `https` | Hostname verification; only `https` is accepted |
-| `INTERACTION_DIFF_INPUT_TOPIC` | `otel.servicegraph.metrics` | OTLP JSON service-graph metrics topic |
-| `INTERACTION_DIFF_OUTPUT_TOPIC` | `graph.interactions.events` | Keyed interaction upsert/delete topic |
-| `INTERACTION_DIFF_DLQ_TOPIC` | `graph.interactions.dlq` | Rejected-input topic |
-| `INTERACTION_DIFF_GROUP_ID` | `interaction-diff-engine` | Kafka consumer group |
-| `INTERACTION_DIFF_TTL_SECONDS` | `300` | Positive business staleness interval |
-| `INTERACTION_DIFF_ALLOWED_LATENESS_SECONDS` | `60` | Non-negative watermark out-of-orderness allowance |
-| `INTERACTION_DIFF_STATE_TTL_SECONDS` | `86400` | Must exceed business TTL plus allowed lateness |
-| `FLINK_CHECKPOINT_INTERVAL_MS` | `30000` | At least 1000 ms |
-| `FLINK_PARALLELISM` | `3` | Positive job parallelism; coordinate with topic partitions and slots |
-| `FLINK_RESTART_ATTEMPTS` | `3` | Non-negative fixed-delay restart attempts |
-| `FLINK_RESTART_DELAY_SECONDS` | `10` | Non-negative delay between restart attempts |
-
-Authentication values are invalid when the protocol is `PLAINTEXT`; this
-prevents a partially configured security mode from silently starting.
-
-## State, Time, And Recovery
-
-### Business State
-
-One keyed `InteractionState` is stored per `interaction_id`. An accepted metric
-advance updates state, replaces the previous timers, and emits an upsert.
-Repeated unchanged cumulative exports do not update state or refresh expiry.
-
-### Timers
-
-The job uses bounded-out-of-orderness event-time watermarks and marks idle
-sources so one quiet Kafka partition does not hold back all watermarks. An
-event-time timer expresses telemetry-time expiry. A processing-time fallback
-produces the same delete transition if event time cannot progress. Flink state
-TTL is a much longer defensive cleanup mechanism.
-
-Delete events are emitted only through the business expiry transition. State
-TTL cleanup itself is not a reliable event source.
-
-### Checkpoints And Offsets
-
-Checkpointing is enabled, and Kafka offsets are committed on successful
-checkpoints. Output delivery is `AT_LEAST_ONCE`; a restart may repeat a
-deterministic event. Downstream processing must be idempotent.
-
-Take a savepoint before changing Flink, operator UIDs, serialized state models,
-Kafka connector versions, or job topology. Validate restore compatibility in a
-non-production namespace before promotion.
-
-### Failure Behavior
-
-| Condition | Behavior | Operator action |
-|---|---|---|
-| Malformed JSON or invalid required timestamp | Record goes to DLQ | Inspect reason and producer payload; replay only after correction |
-| Known unsupported service-graph metric | Metric is ignored | No action unless support is expected |
-| Unchanged cumulative sample | No state transition or TTL refresh | Expected duplicate suppression |
-| Out-of-order older observation | Existing state is retained | Check lateness only if data is routinely beyond the configured bound |
-| Counter reset | New start time advances state and emits upsert | Expected after Collector/source restart |
-| Interaction becomes stale | Delete is emitted and state cleared | Downstream removes the materialized document |
-| Late observation after deletion | New upsert recreates the interaction | Expected live-view behavior |
-| Kafka output redelivery | Same deterministic event may repeat | Downstream deduplicates by event ID and interaction ID |
-| Checkpoint failure | Job remains subject to Flink restart policy | Alert, inspect storage latency/capacity and backpressure |
-| DLQ growth | Invalid producer contract or unexpected schema | Alert and stop blind replay until cause is known |
-
-## Monitoring
-
-At minimum, collect and alert on:
-
-- Kafka input lag by partition and consumer group;
-- input/output record rate and operator backpressure;
-- completed and failed checkpoints, duration, alignment, and size;
-- JobManager and TaskManager restarts and unavailable slots;
-- Collector refused, dropped, queue-full, retry, and export-failed telemetry;
-- Collector service-graph store pressure;
-- DLQ record rate and reason distribution;
-- active interaction keys and serialized state growth;
-- upsert, delete, and delete-to-upsert ratios; and
-- end-to-end trace-to-first-upsert latency.
-
-Capacity must be evaluated independently across Collector pairing, Kafka
-partitions, Flink slots, keyed state, checkpoint storage, and downstream write
-throughput. Local Docker measurements are diagnostic evidence, not an internal
-cluster capacity guarantee.
-
-## Internal Deployment Procedure
-
-1. Mirror the Collector, Flink runtime, and test images into Artifactory.
-2. Publish both wheels and record all immutable image and wheel digests.
-3. Implement production wheel delivery in the independently owned Flink release.
-4. Copy `deploy/contracts/servicegraph-stream.values.yaml` into the release values
-   flow and replace all mock brokers, CIDRs, storage classes, images, and Secrets.
-5. Render and review the standalone Collector chart; run client-side and
-   server-side dry runs without requesting cluster-scoped resources.
-6. Configure durable Flink checkpoints, savepoints, and HA metadata.
-7. Confirm Kafka topics, partitions, ACLs, TLS chains, and broker message limits.
-8. Deploy the Collector chart and Flink release to a non-production namespace.
-9. Confirm both routers, both backends, JobManagers, TaskManagers, and the Flink
-   job are healthy.
-10. Send one paired trace and verify a keyed upsert.
-11. Restart one service-graph backend and verify routers retain the same two
-    backend identities while telemetry resumes after recovery.
-12. Send malformed input and verify the DLQ.
-13. Stop observations, verify one delete, then verify late recreation.
-14. Confirm Collector queues, checkpoints, and Kafka lag remain healthy.
-15. Promote with documented savepoint, Collector rollout, and rollback procedures.
-
-Useful validation commands are maintained in
-[`deploy/openshift/README.md`](../deploy/openshift/README.md).
-
-## Collector Deployment Choices
-
-### Legacy Raw Manifest
-
-- one service-graph Collector replica;
-- `Recreate` deployment strategy;
-- ordinary `ClusterIP` service; and
-- no headless service or trace-routing tier.
-
-This preserves correctness for one stateful connector instance, but it is a
-single-replica reference baseline rather than the intended production topology.
-
-### Implemented Scaled Collector Design
-
-```mermaid
-flowchart LR
-    apps["Applications"]
-    routers["Stateless Collector routing tier"]
-    discovery["Headless Service backend discovery"]
-    sg0["Service-graph Collector 0"]
-    sg1["Service-graph Collector 1"]
-    kafka["Kafka metrics topic"]
-
-    apps --> routers
-    routers -- "routing_key: traceID" --> discovery
-    discovery --> sg0
-    discovery --> sg1
-    sg0 --> kafka
-    sg1 --> kafka
+kubectl exec -n servicegraph-e2e streaming-0 -c redpanda -- `
+  rpk topic create otel.servicegraph.metrics
+kubectl exec -n servicegraph-e2e streaming-0 -c redpanda -- `
+  rpk topic create graph.interactions.events
 ```
 
-The routing tier consistently hashes by trace ID so all spans from one trace
-reach the same service-graph connector state. Generic round-robin balancing is
-incorrect. The standalone Helm chart implements exactly two service-graph
-Collector replicas, a headless governing Service, and stable ordinal DNS names
-as the router hash ring. It deliberately uses a static resolver so backend
-restart does not change ring membership and requires no EndpointSlice RBAC.
+Install collection and processing:
 
-Restarting an ordinal can temporarily pause delivery for the traces assigned to
-it; router retry queues absorb bounded outages. Scaling the StatefulSet changes
-the ring and redistributes pairing state, so backend count changes require a
-planned continuity window and capacity review.
+```powershell
+helm upgrade --install collection deploy/helm/servicegraph-collector `
+  --namespace servicegraph-e2e `
+  --set fullnameOverride=servicegraph-collector `
+  --set 'streamContract.kafka.brokers[0]=streaming:9093' `
+  --set streamContract.kafka.security.protocol=PLAINTEXT `
+  --wait --timeout 5m
 
-## Ownership
+helm upgrade --install processing deploy/helm/servicegraph-flink `
+  --namespace servicegraph-e2e `
+  --set image.ref=extended-otel-flink-runtime:2.2.1-java11 `
+  --set image.pullPolicy=IfNotPresent `
+  --set application.parallelism=1 `
+  --set application.jobManagerReplicas=2 `
+  --set application.taskManagerSlots=1 `
+  --set 'streamContract.kafka.brokers[0]=streaming:9093' `
+  --set streamContract.kafka.security.protocol=PLAINTEXT `
+  --set storage.storageClassName=standard `
+  --set storage.size=2Gi `
+  --set 'storage.accessModes[0]=ReadWriteOnce' `
+  --set job.interactionTtlSeconds=30 `
+  --set job.allowedLatenessSeconds=2 `
+  --set job.stateTtlSeconds=120 `
+  --set job.checkpointIntervalMs=5000 `
+  --timeout 10m
 
-| Owner | Responsibilities |
-|---|---|
-| Application team | Semantic extensions, generated models, event contracts, Flink job, release compatibility |
-| Platform team | Chart values, image promotion, wheel delivery, OpenShift resources, durable state, probes, rollout and rollback |
-| Kafka team | Brokers, topics, partitions, replication, ACLs, quotas, certificates, retention |
-| Observability team | Collector chart ownership, trace routing, pipeline health, service-graph capacity |
-| NiFi/MongoDB owners | Idempotent event materialization, downstream retry/DLQ, indexes, retention, backup and recovery |
+kubectl rollout status deployment/servicegraph-diff `
+  --namespace servicegraph-e2e --timeout=10m
+kubectl get pods --namespace servicegraph-e2e
+```
 
-## Related Documentation
+Do not add `--wait` to the Flink Helm command. The launcher is a post-install
+hook, while Kind's `standard` storage class waits for a pod before binding its
+PVC. Waiting on all Helm resources before running the hook would deadlock that
+ordering. Wait for the native JobManager Deployment explicitly instead.
+The `ReadWriteOnce` claim is valid here only because this Kind cluster has one
+node. A multi-node deployment requires shared `ReadWriteMany` storage.
 
-- [Architecture](architecture.md)
-- [Air-gapped build and release](build-and-release.md)
-- [Limitations and roadmap](limitations-and-roadmap.md)
+Install the optional visualization release:
+
+```powershell
+helm upgrade --install visualization deploy/helm/servicegraph-ui `
+  --namespace servicegraph-e2e `
+  --set fullnameOverride=servicegraph-ui `
+  --set image.repository=extended-otel-servicegraph-ui `
+  --set image.tag=0.1.2 `
+  --set image.pullPolicy=IfNotPresent `
+  --set 'streamContract.kafka.brokers[0]=streaming:9093' `
+  --set streamContract.kafka.security.protocol=PLAINTEXT `
+  --set streamContract.kafka.security.existingSecret= `
+  --wait --timeout 5m
+```
+
+The UI replays `graph.interactions.events` into SQLite on its retained PVC.
+Only Flink `upsert` and `delete` commands change the visible graph. The UI does
+not calculate staleness or expire records.
+
+Install the optional live traffic generator:
+
+```powershell
+helm upgrade --install demo deploy/helm/servicegraph-demo `
+  --namespace servicegraph-e2e `
+  --set fullnameOverride=servicegraph-demo `
+  --set image.repository=extended-otel-servicegraph-demo `
+  --set image.tag=0.1.1 `
+  --set image.pullPolicy=IfNotPresent `
+  --set collector.endpoint=http://servicegraph-collector-router:4318/v1/traces `
+  --wait --timeout 5m
+```
+
+For the short local Flink TTL, the default demo grows the topology every 20
+seconds and then rotates edges. Production TTLs naturally make deletion slower.
+The generator never deletes graph state itself.
+
+Send a paired CLIENT/SERVER trace through OTLP:
+
+```powershell
+$traceScript = @'
+import time
+import grpc
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2_grpc import TraceServiceStub
+from opentelemetry.proto.common.v1.common_pb2 import AnyValue, InstrumentationScope, KeyValue
+from opentelemetry.proto.resource.v1.resource_pb2 import Resource
+from opentelemetry.proto.trace.v1.trace_pb2 import ResourceSpans, ScopeSpans, Span, Status
+
+def kv(key, value):
+    return KeyValue(key=key, value=AnyValue(string_value=value))
+
+now = time.time_ns()
+trace_id = bytes.fromhex("1122232425262728292a2b2c2d2e2f30")
+client_id = bytes.fromhex("1122232425262728")
+attrs = [kv("http.request.method", "POST"), kv("http.route", "/checkout")]
+client = Span(
+    trace_id=trace_id, span_id=client_id, name="POST /checkout",
+    kind=Span.SPAN_KIND_CLIENT, start_time_unix_nano=now,
+    end_time_unix_nano=now + 20_000_000, attributes=attrs,
+    status=Status(code=Status.STATUS_CODE_OK),
+)
+server = Span(
+    trace_id=trace_id, span_id=bytes.fromhex("2132232425262728"),
+    parent_span_id=client_id, name="POST /checkout",
+    kind=Span.SPAN_KIND_SERVER, start_time_unix_nano=now + 1_000_000,
+    end_time_unix_nano=now + 18_000_000, attributes=attrs,
+    status=Status(code=Status.STATUS_CODE_OK),
+)
+request = ExportTraceServiceRequest(resource_spans=[
+    ResourceSpans(
+        resource=Resource(attributes=[
+            kv("service.name", "checkout-api"),
+            kv("service.namespace", "shop"),
+        ]),
+        scope_spans=[ScopeSpans(
+            scope=InstrumentationScope(name="e2e"), spans=[client]
+        )],
+    ),
+    ResourceSpans(
+        resource=Resource(attributes=[
+            kv("service.name", "inventory-api"),
+            kv("service.namespace", "shop"),
+        ]),
+        scope_spans=[ScopeSpans(
+            scope=InstrumentationScope(name="e2e"), spans=[server]
+        )],
+    ),
+])
+with grpc.insecure_channel("servicegraph-collector-router:4317") as channel:
+    TraceServiceStub(channel).Export(request, timeout=15)
+'@
+
+$encodedTrace = [Convert]::ToBase64String(
+  [Text.Encoding]::UTF8.GetBytes($traceScript)
+)
+
+kubectl delete pod trace-producer --namespace servicegraph-e2e `
+  --ignore-not-found
+kubectl run trace-producer --namespace servicegraph-e2e `
+  --image=extended-otel-flink-runtime:2.2.1-java11 `
+  --image-pull-policy=IfNotPresent `
+  --restart=Never `
+  --command -- /usr/local/bin/python -c `
+  "import base64; exec(base64.b64decode('$encodedTrace'))"
+kubectl wait pod/trace-producer --namespace servicegraph-e2e `
+  --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m
+```
+
+Verify both Kafka stages. The second command must contain an `upsert` event
+whose client is `checkout-api` and server is `inventory-api`; approximately 30
+seconds later it also contains the expiry delete.
+
+```powershell
+kubectl exec -n servicegraph-e2e streaming-0 -c redpanda -- `
+  rpk topic consume otel.servicegraph.metrics -o start -n 1
+
+kubectl exec -n servicegraph-e2e streaming-0 -c redpanda -- `
+  rpk topic consume graph.interactions.events -o start -n 1
+```
+
+Test JobManager failover by resolving the active REST endpoint, deleting that
+pod, and checking recovery:
+
+```powershell
+$leaderIp = kubectl get endpoints servicegraph-diff-rest `
+  --namespace servicegraph-e2e `
+  -o jsonpath='{.subsets[0].addresses[0].ip}'
+$leaderPod = kubectl get pods --namespace servicegraph-e2e `
+  -l app=servicegraph-diff `
+  -o jsonpath="{.items[?(@.status.podIP=='$leaderIp')].metadata.name}"
+
+kubectl delete pod $leaderPod --namespace servicegraph-e2e
+kubectl rollout status deployment/servicegraph-diff `
+  --namespace servicegraph-e2e --timeout=5m
+kubectl get pods --namespace servicegraph-e2e
+```
+
+The replacement JobManager must become ready, the REST endpoint must move to a
+surviving or replacement pod, and the Flink UI must show the job as `RUNNING`
+with completed checkpoints continuing to increase. Submit another trace after
+the deletion to verify processing, not only control-plane recovery. This
+single-node check proves JobManager pod recovery, not recovery from node or
+storage failure.
+
+Open the Flink UI locally:
+
+```powershell
+kubectl port-forward --namespace servicegraph-e2e `
+  service/servicegraph-diff-rest 8081:8081
+```
+
+Open the service graph UI locally:
+
+```powershell
+kubectl port-forward --namespace servicegraph-e2e `
+  service/servicegraph-ui 8080:8080
+```
+
+Then open `http://localhost:8080`.
+
+Remove the environment when it is no longer needed:
+
+```powershell
+kind delete cluster --name servicegraph-e2e
+Remove-Item $env:KUBECONFIG -ErrorAction SilentlyContinue
+```
+
+## Flink Application Mode
+
+The Flink chart installs a post-install launcher Job. The launcher calls
+`flink run --target kubernetes-application`; the native Flink client then
+creates the long-running `servicegraph-diff` JobManager Deployment and dynamic
+TaskManager pods. The Deployment is therefore visible in the cluster after
+submission but is not present in `helm template` output.
+
+Do not launch a second application with the same cluster ID. Upgrade the job by
+taking a savepoint, stopping the existing application, installing the new
+immutable image, and restoring from the verified savepoint.
+
+## Runtime Settings
+
+| Variable | Default |
+| --- | --- |
+| `KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092` |
+| `KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` |
+| `INTERACTION_DIFF_INPUT_TOPIC` | `otel.servicegraph.metrics` |
+| `INTERACTION_DIFF_OUTPUT_TOPIC` | `graph.interactions.events` |
+| `INTERACTION_DIFF_GROUP_ID` | `interaction-diff-engine` |
+| `INTERACTION_DIFF_TTL_SECONDS` | `300` |
+| `INTERACTION_DIFF_ALLOWED_LATENESS_SECONDS` | `60` |
+| `INTERACTION_DIFF_STATE_TTL_SECONDS` | `86400` |
+| `FLINK_CHECKPOINT_INTERVAL_MS` | `30000` |
+| `FLINK_PARALLELISM` | `3` |
+| `FLINK_RESTART_ATTEMPTS` | `3` |
+| `FLINK_RESTART_DELAY_SECONDS` | `10` |
+
+State TTL must exceed interaction TTL plus allowed lateness. `SASL_SSL`
+additionally requires mechanism, username, password, CA file, and endpoint
+identification settings.
+
+## Operations
+
+Monitor Collector export failures, Kafka lag, checkpoint age and failures,
+JobManager restarts, `rejected_records`, and RWX volume capacity. Before an
+upgrade, verify the savepoint exists and can be read by the new image. After an
+upgrade, verify both topic flows and that checkpoints resume.
+
+Uninstalling the Helm release does not delete a retained state claim. Native
+Flink runtime resources may require explicit cleanup because Flink, not Helm,
+creates them after submission.

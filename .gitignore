@@ -10,4 +10,4 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-reports/confidence/*.json
+node_modules/

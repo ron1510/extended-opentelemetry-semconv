@@ -14,6 +14,7 @@ serviceAccount:
   annotations: {}
 
 router:
+  # Both stateless routers use the same fixed backend hash ring.
   replicaCount: 2
   service:
     type: ClusterIP
@@ -29,7 +30,7 @@ router:
   podAnnotations: {}
 
 backend:
-  # Version 1 intentionally fixes the hash ring at exactly two endpoints.
+  # Keep this at two: changing the fixed ring remaps in-flight traces.
   replicaCount: 2
   serviceGraph:
     storeTtl: 10s
@@ -42,16 +43,9 @@ backend:
     limits:
       cpu: "1"
       memory: 512Mi
-  persistence:
-    enabled: true
-    storageClass: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 10Gi
   podAnnotations: {}
 
 streamContract:
-  version: "1.0"
   kafka:
     brokers:
       - kafka.example.internal:9093
@@ -64,15 +58,6 @@ streamContract:
       caKey: ca.crt
   topics:
     servicegraphMetrics: otel.servicegraph.metrics
-    interactionEvents: graph.interactions.events
-    interactionDlq: graph.interactions.dlq
-
-internalTls:
-  enabled: false
-  existingSecret: ""
-  caKey: ca.crt
-  certificateKey: tls.crt
-  privateKeyKey: tls.key
 
 podSecurityContext:
   runAsNonRoot: true
@@ -85,46 +70,7 @@ containerSecurityContext:
     drop:
       - ALL
 
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 1
-
-networkPolicy:
-  enabled: false
-  routerIngress:
-    namespaceSelector: {}
-  kafkaEgress:
-    cidrs: []
-    ports:
-      - 9093
-  dnsEgress:
-    namespaceSelector:
-      matchLabels:
-        kubernetes.io/metadata.name: kube-system
-    podSelector:
-      matchLabels:
-        k8s-app: kube-dns
-  metricsIngress:
-    enabled: false
-    namespaceSelector: {}
-
-monitoring:
-  service:
-    enabled: true
-    annotations: {}
-
 topologySpreadConstraints: []
 nodeSelector: {}
 tolerations: []
 affinity: {}
-
-test:
-  enabled: true
-  podSecurityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
-  image:
-    repository: curlimages/curl
-    tag: "8.13.0"
-    pullPolicy: IfNotPresent

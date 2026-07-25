@@ -12,9 +12,15 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from extended_otel_semconv.entities import SemanticEntity
 from extended_otel_semconv.graph.metrics import MetricPoint, MetricTemporality
-from extended_otel_semconv.graph.service_graph import entities_from_service_graph_side, service_graph_edge_type
+from extended_otel_semconv.graph.observation import EdgeObservation, EntityObservation, ObservedEdge, ObservedEntity
+from extended_otel_semconv.graph.runtime_registry import service_graph_relationships
+from extended_otel_semconv.graph.service_graph import (
+    entities_from_service_graph_side,
+    observations_from_service_graph_datapoint,
+    service_graph_edge_type,
+)
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 INTERACTION_EVENT_TYPE = "interaction_state_changed"
 DEFAULT_INTERACTION_TTL_SECONDS = 300
 DEFAULT_ALLOWED_LATENESS_SECONDS = 60
@@ -39,6 +45,11 @@ class InteractionEntityRef(FrozenModel):
     type: NonEmptyString
 
 
+class InteractionGraph(FrozenModel):
+    nodes: tuple[ObservedEntity, ...] = ()
+    edges: tuple[ObservedEdge, ...] = ()
+
+
 class InteractionEndpoint(FrozenModel):
     service: NonEmptyString
     entities: tuple[InteractionEntityRef, ...] = ()
@@ -59,6 +70,7 @@ class InteractionObservation(FrozenModel):
     server: InteractionEndpoint
     connection_type: NonEmptyString
     dimensions: DimensionMap = Field(default_factory=dict)
+    graph: InteractionGraph = Field(default_factory=InteractionGraph)
 
     @property
     def metric_value(self) -> MetricValue:
@@ -72,6 +84,7 @@ class InteractionPayload(FrozenModel):
     dimensions: DimensionMap = Field(default_factory=dict)
     metrics: dict[str, MetricValue] = Field(default_factory=dict)
     entities: tuple[InteractionEntityRef, ...] = ()
+    graph: InteractionGraph = Field(default_factory=InteractionGraph)
 
 
 class InteractionState(FrozenModel):
@@ -81,14 +94,16 @@ class InteractionState(FrozenModel):
     connection_type: NonEmptyString
     dimensions: DimensionMap = Field(default_factory=dict)
     entities: tuple[InteractionEntityRef, ...] = ()
+    graph: InteractionGraph = Field(default_factory=InteractionGraph)
     metrics_by_name: dict[str, InteractionMetric] = Field(default_factory=dict)
     first_seen_unix_nano: UnixNano
     last_seen_unix_nano: UnixNano
     last_payload_hash: NonEmptyString
     expires_at_unix_nano: UnixNano
+    active: bool = True
 
 class InteractionEventBase(FrozenModel):
-    schema_version: Literal["1.0"] = SCHEMA_VERSION
+    schema_version: Literal["1.1"] = SCHEMA_VERSION
     event_id: NonEmptyString
     event_type: Literal["interaction_state_changed"] = INTERACTION_EVENT_TYPE
     interaction_id: NonEmptyString
@@ -120,7 +135,7 @@ class InteractionDiffResult(FrozenModel):
 
 
 class InteractionDlqEvent(FrozenModel):
-    schema_version: Literal["1.0"] = SCHEMA_VERSION
+    schema_version: Literal["1.1"] = SCHEMA_VERSION
     event_type: Literal["interaction_record_rejected"] = "interaction_record_rejected"
     reason: NonEmptyString
     payload: str
@@ -159,6 +174,13 @@ def observation_from_servicegraph_datapoint(
     client_entities = _entity_refs(entities_from_service_graph_side(attributes, "client", client_name))
     server_entities = _entity_refs(entities_from_service_graph_side(attributes, "server", server_name))
     connection_type = service_graph_edge_type(attributes)
+    graph_observations = observations_from_service_graph_datapoint(
+        metric_name=metric_name,
+        attributes=dict(attributes),
+        value=value,
+        observed_at_unix_nano=observed_at_unix_nano,
+        relationships=service_graph_relationships(),
+    )
     interaction_id = build_interaction_id(client_name, server_name, connection_type, dimensions)
     return InteractionObservation(
         interaction_id=interaction_id,
@@ -173,6 +195,18 @@ def observation_from_servicegraph_datapoint(
         server=InteractionEndpoint(service=server_name, entities=server_entities),
         connection_type=connection_type,
         dimensions=dimensions,
+        graph=InteractionGraph(
+            nodes=tuple(
+                observation.entity
+                for observation in graph_observations
+                if isinstance(observation, EntityObservation)
+            ),
+            edges=tuple(
+                observation.edge
+                for observation in graph_observations
+                if isinstance(observation, EdgeObservation)
+            ),
+        ),
     )
 
 
@@ -219,7 +253,7 @@ def expire_state(
     *,
     emitted_at_unix_ms: int | None = None,
 ) -> InteractionDeleteEvent | None:
-    if timer_unix_nano < state.expires_at_unix_nano:
+    if not state.active or timer_unix_nano < state.expires_at_unix_nano:
         return None
     emitted_at = emitted_at_unix_ms if emitted_at_unix_ms is not None else int(time() * 1000)
     return delete_event(state, state.expires_at_unix_nano, emitted_at)
@@ -261,6 +295,7 @@ def interaction_payload(state: InteractionState) -> InteractionPayload:
         dimensions=dict(sorted(state.dimensions.items())),
         metrics={name: metric.value for name, metric in sorted(state.metrics_by_name.items())},
         entities=state.entities,
+        graph=state.graph,
     )
 
 
@@ -332,11 +367,13 @@ def _state_from_observation(
         connection_type=observation.connection_type,
         dimensions=observation.dimensions,
         entities=entities,
+        graph=observation.graph,
         metrics_by_name=metrics_by_name,
         first_seen_unix_nano=first_seen_unix_nano,
         last_seen_unix_nano=observation.observed_at_unix_nano,
         last_payload_hash="pending",
         expires_at_unix_nano=expiry_base_unix_nano + ttl_seconds * 1_000_000_000,
+        active=True,
     )
     return provisional.model_copy(update={"last_payload_hash": payload_hash(provisional)})
 

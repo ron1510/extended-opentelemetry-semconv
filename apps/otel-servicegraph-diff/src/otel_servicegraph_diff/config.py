@@ -61,10 +61,6 @@ class InteractionDiffConfig(BaseSettings):
         default="graph.interactions.events",
         validation_alias="INTERACTION_DIFF_OUTPUT_TOPIC",
     )
-    dlq_topic: TopicName = Field(
-        default="graph.interactions.dlq",
-        validation_alias="INTERACTION_DIFF_DLQ_TOPIC",
-    )
     group_id: TopicName = Field(
         default="interaction-diff-engine",
         validation_alias="INTERACTION_DIFF_GROUP_ID",

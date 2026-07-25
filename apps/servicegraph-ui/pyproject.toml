@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "servicegraph-ui"
+version = "0.1.2"
+description = "Flink-authoritative interaction graph projection and UI."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "extended-opentelemetry-semconv>=0.1.0,<0.2.0",
+  "fastapi==0.116.1",
+  "kafka-python-ng==2.2.3",
+  "pydantic-settings==2.14.2",
+  "uvicorn[standard]==0.35.0",
+]
+
+[project.scripts]
+servicegraph-ui = "servicegraph_ui.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

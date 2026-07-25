@@ -47,8 +47,6 @@ spec:
               containerPort: 4317
             - name: otlp-http
               containerPort: 4318
-            - name: metrics
-              containerPort: 8888
           startupProbe:
             tcpSocket:
               port: otlp-grpc
@@ -75,22 +73,13 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.internalTls.enabled }}
-            - name: internal-tls
-              mountPath: /etc/otelcol/internal-tls
-              readOnly: true
-            {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "servicegraph-collector.fullname" . }}-router
         - name: tmp
-          emptyDir: {}
-        {{- if .Values.internalTls.enabled }}
-        - name: internal-tls
-          secret:
-            secretName: {{ required "internalTls.existingSecret is required when internal TLS is enabled" .Values.internalTls.existingSecret }}
-        {{- end }}
+          emptyDir:
+            sizeLimit: 256Mi
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

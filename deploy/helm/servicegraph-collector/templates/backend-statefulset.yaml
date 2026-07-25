@@ -8,7 +8,7 @@ metadata:
 spec:
   serviceName: {{ include "servicegraph-collector.fullname" . }}-backend-headless
   replicas: {{ .Values.backend.replicaCount }}
-  podManagementPolicy: OrderedReady
+  podManagementPolicy: Parallel
   updateStrategy:
     type: RollingUpdate
   revisionHistoryLimit: 3
@@ -57,8 +57,6 @@ spec:
           ports:
             - name: otlp-grpc
               containerPort: 4317
-            - name: metrics
-              containerPort: 8888
           startupProbe:
             tcpSocket:
               port: otlp-grpc
@@ -83,8 +81,6 @@ spec:
               mountPath: /etc/otelcol/config.yaml
               subPath: config.yaml
               readOnly: true
-            - name: queue
-              mountPath: /var/lib/otelcol/queue
             - name: tmp
               mountPath: /tmp
             {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
@@ -92,21 +88,13 @@ spec:
               mountPath: /etc/kafka/tls
               readOnly: true
             {{- end }}
-            {{- if .Values.internalTls.enabled }}
-            - name: internal-tls
-              mountPath: /etc/otelcol/internal-tls
-              readOnly: true
-            {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "servicegraph-collector.fullname" . }}-backend
         - name: tmp
-          emptyDir: {}
-        {{- if not .Values.backend.persistence.enabled }}
-        - name: queue
-          emptyDir: {}
-        {{- end }}
+          emptyDir:
+            sizeLimit: 256Mi
         {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
         - name: kafka-tls
           secret:
@@ -114,11 +102,6 @@ spec:
             items:
               - key: {{ .Values.streamContract.kafka.security.caKey }}
                 path: {{ .Values.streamContract.kafka.security.caKey }}
-        {{- end }}
-        {{- if .Values.internalTls.enabled }}
-        - name: internal-tls
-          secret:
-            secretName: {{ required "internalTls.existingSecret is required when internal TLS is enabled" .Values.internalTls.existingSecret }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -136,19 +119,3 @@ spec:
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-  {{- if .Values.backend.persistence.enabled }}
-  volumeClaimTemplates:
-    - metadata:
-        name: queue
-        labels:
-          {{- include "servicegraph-collector.labels" . | nindent 10 }}
-      spec:
-        accessModes:
-          {{- toYaml .Values.backend.persistence.accessModes | nindent 10 }}
-        {{- with .Values.backend.persistence.storageClass }}
-        storageClassName: {{ . | quote }}
-        {{- end }}
-        resources:
-          requests:
-            storage: {{ .Values.backend.persistence.size }}
-  {{- end }}

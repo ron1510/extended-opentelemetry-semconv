@@ -1,0 +1,202 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "servicegraph-flink.fullname" . }}-pod-templates
+  labels:
+    {{- include "servicegraph-flink.labels" . | nindent 4 }}
+data:
+  jobmanager.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.application.clusterId }}
+        app.kubernetes.io/component: jobmanager
+        app.kubernetes.io/part-of: extended-otel-semconv
+    spec:
+      serviceAccountName: {{ include "servicegraph-flink.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 9999
+        runAsGroup: 9999
+        fsGroup: 9999
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.application.clusterId }}
+              app.kubernetes.io/component: jobmanager
+      containers:
+        - name: flink-main-container
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ join "," .Values.streamContract.kafka.brokers | quote }}
+            - name: KAFKA_SECURITY_PROTOCOL
+              value: {{ .Values.streamContract.kafka.security.protocol | quote }}
+            {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
+            - name: KAFKA_SASL_MECHANISM
+              value: {{ .Values.streamContract.kafka.security.saslMechanism | quote }}
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamContract.kafka.security.existingSecret }}
+                  key: {{ .Values.streamContract.kafka.security.usernameKey }}
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamContract.kafka.security.existingSecret }}
+                  key: {{ .Values.streamContract.kafka.security.passwordKey }}
+            - name: KAFKA_SSL_CA_FILE
+              value: /etc/kafka/tls/{{ .Values.streamContract.kafka.security.caKey }}
+            {{- end }}
+            - name: INTERACTION_DIFF_INPUT_TOPIC
+              value: {{ .Values.streamContract.topics.servicegraphMetrics | quote }}
+            - name: INTERACTION_DIFF_OUTPUT_TOPIC
+              value: {{ .Values.streamContract.topics.interactionEvents | quote }}
+            - name: INTERACTION_DIFF_GROUP_ID
+              value: {{ .Values.job.groupId | quote }}
+            - name: INTERACTION_DIFF_TTL_SECONDS
+              value: {{ .Values.job.interactionTtlSeconds | quote }}
+            - name: INTERACTION_DIFF_ALLOWED_LATENESS_SECONDS
+              value: {{ .Values.job.allowedLatenessSeconds | quote }}
+            - name: INTERACTION_DIFF_STATE_TTL_SECONDS
+              value: {{ .Values.job.stateTtlSeconds | quote }}
+            - name: FLINK_CHECKPOINT_INTERVAL_MS
+              value: {{ .Values.job.checkpointIntervalMs | quote }}
+            - name: FLINK_PARALLELISM
+              value: {{ .Values.application.parallelism | quote }}
+            - name: FLINK_RESTART_ATTEMPTS
+              value: {{ .Values.job.restartAttempts | quote }}
+            - name: FLINK_RESTART_DELAY_SECONDS
+              value: {{ .Values.job.restartDelaySeconds | quote }}
+          resources:
+            {{- toYaml .Values.resources.jobManager | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: flink-state
+              mountPath: /flink-state
+            - name: flink-log
+              mountPath: /opt/flink/log
+            - name: tmp
+              mountPath: /tmp
+            {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
+            - name: kafka-tls
+              mountPath: /etc/kafka/tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: flink-state
+          persistentVolumeClaim:
+            claimName: {{ include "servicegraph-flink.claimName" . }}
+        - name: flink-log
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.logSizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}
+        {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
+        - name: kafka-tls
+          secret:
+            secretName: {{ required "streamContract.kafka.security.existingSecret is required for SASL_SSL" .Values.streamContract.kafka.security.existingSecret }}
+            items:
+              - key: {{ .Values.streamContract.kafka.security.caKey }}
+                path: {{ .Values.streamContract.kafka.security.caKey }}
+        {{- end }}
+  taskmanager.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.application.clusterId }}
+        app.kubernetes.io/component: taskmanager
+        app.kubernetes.io/part-of: extended-otel-semconv
+    spec:
+      serviceAccountName: {{ include "servicegraph-flink.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 9999
+        runAsGroup: 9999
+        fsGroup: 9999
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.application.clusterId }}
+              app.kubernetes.io/component: taskmanager
+      containers:
+        - name: flink-main-container
+          resources:
+            {{- toYaml .Values.resources.taskManager | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: flink-state
+              mountPath: /flink-state
+            - name: flink-log
+              mountPath: /opt/flink/log
+            - name: tmp
+              mountPath: /tmp
+            {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
+            - name: kafka-tls
+              mountPath: /etc/kafka/tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: flink-state
+          persistentVolumeClaim:
+            claimName: {{ include "servicegraph-flink.claimName" . }}
+        - name: flink-log
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.logSizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}
+        {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
+        - name: kafka-tls
+          secret:
+            secretName: {{ required "streamContract.kafka.security.existingSecret is required for SASL_SSL" .Values.streamContract.kafka.security.existingSecret }}
+            items:
+              - key: {{ .Values.streamContract.kafka.security.caKey }}
+                path: {{ .Values.streamContract.kafka.security.caKey }}
+        {{- end }}

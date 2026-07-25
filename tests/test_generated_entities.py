@@ -31,7 +31,7 @@ def test_generated_files_are_current() -> None:
 
 def test_collector_config_is_current() -> None:
     result = subprocess.run(
-        [sys.executable, "scripts/generate_collector_config.py", "--check"],
+        [sys.executable, "scripts/generate_collector_dimensions.py", "--check"],
         check=False,
         capture_output=True,
         text=True,

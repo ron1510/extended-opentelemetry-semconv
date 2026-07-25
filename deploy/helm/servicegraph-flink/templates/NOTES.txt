@@ -1,0 +1,3 @@
+Flink Application Mode cluster: {{ .Values.application.clusterId }}
+REST service: {{ .Values.application.clusterId }}-rest.{{ .Release.Namespace }}.svc:8081
+State claim: {{ include "servicegraph-flink.claimName" . }}

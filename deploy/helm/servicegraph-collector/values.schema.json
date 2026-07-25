@@ -12,7 +12,7 @@
       "type": "object",
       "required": ["replicaCount", "service", "resources", "queueSize"],
       "properties": {
-        "replicaCount": {"type": "integer", "minimum": 2},
+        "replicaCount": {"const": 2},
         "service": {"type": "object"},
         "resources": {"type": "object"},
         "queueSize": {"type": "integer", "minimum": 1},
@@ -21,20 +21,18 @@
     },
     "backend": {
       "type": "object",
-      "required": ["replicaCount", "serviceGraph", "resources", "persistence"],
+      "required": ["replicaCount", "serviceGraph", "resources"],
       "properties": {
-        "replicaCount": {"type": "integer", "minimum": 2, "maximum": 2},
+        "replicaCount": {"const": 2},
         "serviceGraph": {"type": "object"},
         "resources": {"type": "object"},
-        "persistence": {"type": "object"},
         "podAnnotations": {"type": "object"}
       }
     },
     "streamContract": {
       "type": "object",
-      "required": ["version", "kafka", "topics"],
+      "required": ["kafka", "topics"],
       "properties": {
-        "version": {"const": "1.0"},
         "kafka": {
           "type": "object",
           "required": ["brokers", "security"],
@@ -56,26 +54,19 @@
         },
         "topics": {
           "type": "object",
-          "required": ["servicegraphMetrics", "interactionEvents", "interactionDlq"],
+          "required": ["servicegraphMetrics"],
           "properties": {
-            "servicegraphMetrics": {"type": "string", "minLength": 1},
-            "interactionEvents": {"type": "string", "minLength": 1},
-            "interactionDlq": {"type": "string", "minLength": 1}
+            "servicegraphMetrics": {"type": "string", "minLength": 1}
           }
         }
       }
     },
-    "internalTls": {"type": "object"},
     "podSecurityContext": {"type": "object"},
     "containerSecurityContext": {"type": "object"},
-    "podDisruptionBudget": {"type": "object"},
-    "networkPolicy": {"type": "object"},
-    "monitoring": {"type": "object"},
     "topologySpreadConstraints": {"type": "array"},
     "nodeSelector": {"type": "object"},
     "tolerations": {"type": "array"},
-    "affinity": {"type": "object"},
-    "test": {"type": "object"}
+    "affinity": {"type": "object"}
   },
   "required": ["image", "router", "backend", "streamContract"],
   "$defs": {

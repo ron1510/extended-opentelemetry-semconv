@@ -17,9 +17,11 @@ from extended_otel_semconv.graph.interaction import (
 )
 from extended_otel_semconv.graph.metrics import SERVICE_GRAPH_REQUEST_TOTAL
 from otel_servicegraph_diff.flink_job import (
+    Counter,
     OnTimerProcessContext,
     ProcessContext,
     _InteractionDiffProcess,  # pyright: ignore[reportPrivateUsage]
+    _PayloadParser,  # pyright: ignore[reportPrivateUsage]
 )
 from otel_servicegraph_diff.runner import ParsedObservation
 
@@ -36,6 +38,14 @@ class FakeValueState[T]:
 
     def clear(self) -> None:
         self.serialized = None
+
+
+class FakeCounter:
+    def __init__(self) -> None:
+        self.value = 0
+
+    def inc(self, n: int = 1) -> None:
+        self.value += n
 
 
 class FakeTimerService:
@@ -131,9 +141,23 @@ def test_operator_replaces_timer_and_emits_delete() -> None:
 
     assert len(deletes) == 1
     assert isinstance(deletes[0], InteractionDeleteEvent)
-    assert state.serialized is None
+    assert state.serialized is not None
+    assert not InteractionState.model_validate_json(state.serialized).active
     assert processing_timer.serialized is None
     assert timers.deleted_processing == [15_000, 16_000]
+
+    repeated = tuple(
+        operator.process_element(
+            second,
+            cast(KeyedProcessFunction.Context, cast(ProcessContext, context)),
+        )
+    )
+
+    assert repeated == ()
+    assert state.serialized is not None
+    assert not InteractionState.model_validate_json(state.serialized).active
+    assert timers.registered_event == [6_001, 7_001]
+    assert timers.registered_processing == [15_000, 16_000]
 
 
 def test_operator_processing_timer_deletes_when_event_time_is_idle() -> None:
@@ -162,9 +186,19 @@ def test_operator_processing_timer_deletes_when_event_time_is_idle() -> None:
 
     assert len(deletes) == 1
     assert isinstance(deletes[0], InteractionDeleteEvent)
-    assert state.serialized is None
+    assert state.serialized is not None
+    assert not InteractionState.model_validate_json(state.serialized).active
     assert processing_timer.serialized is None
     assert timers.deleted_event == [6_001]
+
+
+def test_payload_parser_counts_and_discards_rejected_records() -> None:
+    parser = _PayloadParser()
+    counter = FakeCounter()
+    parser._rejected_records = cast(Counter, counter)  # pyright: ignore[reportPrivateUsage]
+
+    assert tuple(parser.flat_map("{not-json")) == ()
+    assert counter.value == 1
 
 
 def _parsed_observation(*, value: int, observed_at_unix_nano: int) -> ParsedObservation:

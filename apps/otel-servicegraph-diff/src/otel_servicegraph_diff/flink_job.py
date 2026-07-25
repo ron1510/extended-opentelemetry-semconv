@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from typing import Protocol, cast
 
@@ -38,14 +39,13 @@ from extended_otel_semconv.graph.interaction import (
 from otel_servicegraph_diff.config import InteractionDiffConfig
 from otel_servicegraph_diff.runner import (
     ParsedObservation,
-    ParsedPayload,
     RejectedRecord,
-    dlq_record,
     event_record,
     iter_parsed_payloads,
 )
 
 OUTPUT_ROW_TYPE = Types.ROW_NAMED(["key", "value"], [Types.STRING(), Types.STRING()])
+LOGGER = logging.getLogger(__name__)
 
 
 class TimerService(Protocol):
@@ -65,6 +65,10 @@ class OnTimerProcessContext(ProcessContext, Protocol):
     def time_domain(self) -> TimeDomain: ...
 
 
+class Counter(Protocol):
+    def inc(self, n: int = 1) -> None: ...
+
+
 def run_flink_job(config: InteractionDiffConfig) -> None:
     flink_config = Configuration()
     flink_config.set_string("restart-strategy.type", "fixed-delay")
@@ -80,31 +84,16 @@ def run_flink_job(config: InteractionDiffConfig) -> None:
 
     source = _kafka_source(config)
     event_sink = _kafka_sink(config, config.output_topic)
-    dlq_sink = _kafka_sink(config, config.dlq_topic)
 
     payloads = (
         env.from_source(source, WatermarkStrategy.no_watermarks(), "servicegraph-otlp-json")
         .name("servicegraph-kafka-source")
         .uid("servicegraph-kafka-source")
     )
-    parsed = payloads.flat_map(_PayloadParser()).name("parse-otlp-servicegraph").uid("parse-otlp-servicegraph")
-
-    rejected = (
-        parsed.filter(lambda item: isinstance(item, RejectedRecord))
-        .name("filter-rejected-records")
-        .uid("filter-rejected-records")
-    )
-    rejected_rows = (
-        rejected.map(_rejected_row, output_type=OUTPUT_ROW_TYPE)
-        .name("serialize-rejected-records")
-        .uid("serialize-rejected-records")
-    )
-    rejected_rows.sink_to(dlq_sink).name("interaction-dlq").uid("interaction-dlq")
-
     observations = (
-        parsed.filter(lambda item: isinstance(item, ParsedObservation))
-        .name("filter-interaction-observations")
-        .uid("filter-interaction-observations")
+        payloads.flat_map(_PayloadParser())
+        .name("parse-otlp-servicegraph")
+        .uid("parse-otlp-servicegraph")
         .assign_timestamps_and_watermarks(
             WatermarkStrategy.for_bounded_out_of_orderness(
                 Duration.of_seconds(config.allowed_lateness_seconds)
@@ -178,8 +167,27 @@ def _kafka_sink(config: InteractionDiffConfig, topic: str) -> KafkaSink:
 
 
 class _PayloadParser(FlatMapFunction):
-    def flat_map(self, value: str) -> Iterable[ParsedPayload]:
-        yield from iter_parsed_payloads(value)
+    def __init__(self) -> None:
+        self._rejected_records: Counter | None = None
+
+    def open(self, runtime_context: RuntimeContext) -> None:
+        self._rejected_records = cast(Counter, runtime_context.get_metrics_group().counter("rejected_records"))
+
+    def flat_map(self, value: str) -> Iterable[ParsedObservation]:
+        for parsed in iter_parsed_payloads(value):
+            if isinstance(parsed, RejectedRecord):
+                self._require_rejected_records().inc()
+                LOGGER.warning(
+                    "discarding rejected servicegraph record: reason=%s",
+                    parsed.rejection.reason,
+                )
+                continue
+            yield parsed
+
+    def _require_rejected_records(self) -> Counter:
+        if self._rejected_records is None:
+            raise RuntimeError("parser metrics accessed before operator initialization")
+        return self._rejected_records
 
 
 class _InteractionDiffProcess(KeyedProcessFunction):
@@ -206,11 +214,9 @@ class _InteractionDiffProcess(KeyedProcessFunction):
 
     def process_element(
         self,
-        value: ParsedPayload,
+        value: ParsedObservation,
         ctx: KeyedProcessFunction.Context,
     ) -> Iterable[InteractionEvent]:
-        if not isinstance(value, ParsedObservation):
-            return ()
         state_handle = self._require_state()
         previous_json = state_handle.value()
         previous = InteractionState.model_validate_json(previous_json) if previous_json else None
@@ -223,6 +229,8 @@ class _InteractionDiffProcess(KeyedProcessFunction):
             expiry_base_unix_nano=watermark_nano,
         )
         if previous == result.state:
+            if previous is not None and not previous.active:
+                state_handle.update(previous.model_dump_json())
             return ()
         processing_timer_state = self._require_processing_timer()
         if previous is not None:
@@ -263,7 +271,7 @@ class _InteractionDiffProcess(KeyedProcessFunction):
         if processing_timer is not None and time_domain is TimeDomain.EVENT_TIME:
             timer_service.delete_processing_time_timer(processing_timer)
         processing_timer_state.clear()
-        state_handle.clear()
+        state_handle.update(state.model_copy(update={"active": False}).model_dump_json())
         return (event,)
 
     def _require_state(self) -> ValueState[str]:
@@ -278,28 +286,17 @@ class _InteractionDiffProcess(KeyedProcessFunction):
 
 
 class _ObservationTimestampAssigner(TimestampAssigner):
-    def extract_timestamp(self, value: ParsedPayload, record_timestamp: int) -> int:
+    def extract_timestamp(self, value: ParsedObservation, record_timestamp: int) -> int:
         del record_timestamp
-        if not isinstance(value, ParsedObservation):
-            raise TypeError("timestamp assigner received a rejected payload")
         return value.observation.observed_at_unix_nano // 1_000_000
 
 
-def _interaction_key(item: ParsedPayload) -> str:
-    if not isinstance(item, ParsedObservation):
-        raise TypeError("key selector received a rejected payload")
+def _interaction_key(item: ParsedObservation) -> str:
     return item.observation.interaction_id
 
 
 def _event_row(event: InteractionEvent) -> Row:
     record = event_record(event.model_dump_json(), event.interaction_id)
-    return Row(record.key, record.value)
-
-
-def _rejected_row(item: ParsedPayload) -> Row:
-    if not isinstance(item, RejectedRecord):
-        raise TypeError("DLQ mapper received an observation")
-    record = dlq_record(item.rejection)
     return Row(record.key, record.value)
 
 

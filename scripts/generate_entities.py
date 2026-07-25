@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import json
 import re
 import sys
 from pathlib import Path
@@ -12,7 +13,11 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "packages" / "extended-opentelemetry-semconv" / "src"))
 
-from extended_otel_semconv.registry.model import AttributeDefinition, EntityAttributeRef, EntityDefinition  # noqa: E402
+from extended_otel_semconv.registry.model import (  # noqa: E402
+    AttributeDefinition,
+    EntityAttributeRef,
+    EntityDefinition,
+)
 from extended_otel_semconv.registry.validation import load_model_registry, validate_extension_model  # noqa: E402
 
 UPSTREAM_MODEL = ROOT / "upstream" / "otel-semconv" / "v1.43.0" / "model"
@@ -23,6 +28,15 @@ GENERATED_DIR = (
 PACKAGE_LOCK = (
     ROOT / "packages" / "extended-opentelemetry-semconv" / "src" / "extended_otel_semconv" / "metadata"
     / "otel-semconv.lock.json"
+)
+RELATIONSHIP_METADATA = (
+    ROOT
+    / "packages"
+    / "extended-opentelemetry-semconv"
+    / "src"
+    / "extended_otel_semconv"
+    / "metadata"
+    / "service-graph-relationships.json"
 )
 
 
@@ -52,6 +66,10 @@ def generate_files() -> dict[Path, str]:
     extension = load_model_registry(EXTENSION_MODEL)
     attributes = {**upstream.attributes_by_id, **extension.attributes_by_id}
     entities = {**upstream.entities_by_name, **extension.entities_by_name}
+    relationships = {
+        **upstream.relationships_by_id,
+        **extension.relationships_by_id,
+    }
 
     generated_entities = tuple(
         _generated_entity(entity)
@@ -63,6 +81,16 @@ def generate_files() -> dict[Path, str]:
     files: dict[Path, str] = {
         GENERATED_DIR / "__init__.py": _render_package_init(generated_entities, domains),
         PACKAGE_LOCK: (ROOT / "upstream" / "otel-semconv.lock.json").read_text(encoding="utf-8"),
+        RELATIONSHIP_METADATA: json.dumps(
+            [
+                relationship.model_dump(mode="json")
+                for relationship in sorted(relationships.values(), key=lambda item: item.id)
+                if "service_graph" in relationship.source_signals
+            ],
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
     }
     for domain in domains:
         domain_entities = tuple(entity for entity in generated_entities if entity.domain == domain)

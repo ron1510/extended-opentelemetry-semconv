@@ -1,0 +1,53 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: registry.internal.example/extended-otel-servicegraph-demo
+  tag: "0.1.1"
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+collector:
+  endpoint: http://servicegraph-collector-router:4318/v1/traces
+
+traffic:
+  emitIntervalSeconds: 2
+  topologyChangeIntervalSeconds: 20
+  initialEdges: 2
+  maxActiveEdges: 6
+  requestsPerTick: 3
+  errorRate: 0.08
+  serviceNamespace: shop
+  instanceId: live-demo
+  randomSeed: ""
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -32,13 +32,7 @@ data:
           otlp:
             timeout: 5s
             tls:
-              {{- if .Values.internalTls.enabled }}
-              insecure: false
-              insecure_skip_verify: false
-              ca_file: /etc/otelcol/internal-tls/{{ .Values.internalTls.caKey }}
-              {{- else }}
               insecure: true
-              {{- end }}
             sending_queue:
               enabled: true
               sizer: items
@@ -72,12 +66,3 @@ data:
           receivers: [otlp]
           processors: [memory_limiter, batch/traces]
           exporters: [load_balancing]
-      telemetry:
-        metrics:
-          level: detailed
-          readers:
-            - pull:
-                exporter:
-                  prometheus:
-                    host: 0.0.0.0
-                    port: 8888

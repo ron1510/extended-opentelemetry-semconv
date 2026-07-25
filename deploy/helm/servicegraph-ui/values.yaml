@@ -1,0 +1,74 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: registry.internal.example/extended-otel-servicegraph-ui
+  tag: "0.1.2"
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+streamContract:
+  kafka:
+    brokers:
+      - kafka.internal.example:9092
+    security:
+      protocol: SASL_SSL
+      saslMechanism: SCRAM-SHA-256
+      existingSecret: servicegraph-kafka-auth
+      usernameKey: username
+      passwordKey: password
+      caKey: ca.crt
+  topics:
+    interactionEvents: graph.interactions.events
+
+consumer:
+  groupId: servicegraph-visualization
+  recentEventLimit: 1000
+
+storage:
+  createClaim: true
+  existingClaim: ""
+  storageClassName: standard
+  size: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  retainClaim: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 192Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+emptyDir:
+  tmpSizeLimit: 128Mi

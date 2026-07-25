@@ -1,78 +1,49 @@
-# Development
+# Development And Release
 
-Use the registry as the source of truth.
-
-Do not hand-edit generated entity modules or the local Collector config. Change
-the model, then regenerate.
-
-## Commands
-
-Validate the extension registry:
+Use Python 3.12 and install the two packages in editable mode:
 
 ```powershell
-python scripts\validate_registry.py
+python -m pip install -e packages/extended-opentelemetry-semconv `
+  -e apps/otel-servicegraph-diff
+python -m pip install pytest ruff pyright hypothesis
 ```
 
-Regenerate committed artifacts:
-
-```powershell
-python scripts\generate_entities.py
-python scripts\generate_collector_config.py
-```
-
-Check generated artifacts:
+Run the behavior and generated-artifact checks:
 
 ```powershell
 python scripts\generate_entities.py --check
-python scripts\generate_collector_config.py --check
-```
-
-Run code quality checks:
-
-```powershell
+python scripts\generate_collector_dimensions.py --check
 python -m ruff check .
 python -m pyright
 python -m pytest
+helm lint deploy/helm/servicegraph-collector
+helm lint deploy/helm/servicegraph-flink
 ```
 
-Check the Docker Compose wiring:
+The generators validate extensions against the pinned upstream model before
+producing committed Python entities or Collector dimensions.
+
+## Runtime Image
+
+The release artifact is one immutable Flink image. Python packages are
+installed directly from the repository; there is no wheel staging or
+side-loading step.
 
 ```powershell
-docker compose config
+docker build `
+  --file apps/otel-servicegraph-diff/Dockerfile `
+  --target runtime `
+  --build-arg PIP_INDEX_URL=https://pypi.internal.example/simple `
+  --secret id=maven_settings,src=$HOME/.m2/settings.xml `
+  --tag registry.internal.example/extended-otel-flink-runtime:2.2.1-java11 `
+  .
 ```
 
-Run the local stack:
+The build compiles the Java serializers, resolves the Flink Kafka connector,
+installs both Python packages and their dependencies, and copies them into the
+Flink 2.2.1 Java 11 image. The resulting container runs as the non-root Flink
+user.
 
-```powershell
-docker compose up --build
-```
-
-For what each check proves and how the local runtime is wired, see
-[Test Environment](test-environment.md).
-
-For upstream OpenTelemetry model upgrades, see
-[Upstream Semconv Upgrade Runbook](upstream-semconv-upgrade-runbook.md).
-
-## Code Style
-
-Keep domain decisions in typed pure functions where possible.
-
-Use stateful classes only when there is real state or lifecycle. The formatter
-and schema generation paths should stay as typed pure functions so they can be
-tested directly and reused behind different Kafka/runtime adapters.
-
-Prefer Pydantic models for serialized domain objects such as registry documents,
-entities, graph nodes, graph edges, and graph snapshots.
-
-## Documentation Expectations
-
-When changing behavior, update the closest durable documentation:
-
-- registry rules: `docs/registry-extensions.md`;
-- graph ingestion or edge semantics: `docs/graph-engine.md`;
-- Collector config or pipeline shape: `docs/collector-pipeline.md`;
-- upstream versioning: `docs/upstream-semconv-upgrade-runbook.md`;
-- tests or runtime checks: `docs/test-environment.md`.
-
-Prefer concise module docstrings for code boundaries that are not obvious from
-the function names. Avoid comments that restate a single line of code.
+Publish by digest or immutable tag. Mirror the Python, Maven, Flink, and
+Collector dependencies required by the internal environment instead of
+downloading artifacts during deployment.

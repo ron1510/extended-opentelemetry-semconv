@@ -1,0 +1,79 @@
+image:
+  ref: registry.internal.example/extended-otel-flink-runtime:2.2.1-java11
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+application:
+  clusterId: servicegraph-diff
+  parallelism: 3
+  jobManagerReplicas: 2
+  taskManagerSlots: 2
+  jobManagerCpu: "0.5"
+  taskManagerCpu: "1"
+  jobManagerProcessMemory: 1200m
+  taskManagerProcessMemory: 1800m
+  taskManagerStartTimeout: 10m
+
+streamContract:
+  kafka:
+    brokers:
+      - kafka.internal.example:9092
+    security:
+      protocol: SASL_SSL
+      saslMechanism: SCRAM-SHA-256
+      existingSecret: servicegraph-kafka-auth
+      usernameKey: username
+      passwordKey: password
+      caKey: ca.crt
+  topics:
+    servicegraphMetrics: otel.servicegraph.metrics
+    interactionEvents: graph.interactions.events
+
+job:
+  groupId: interaction-diff-engine
+  interactionTtlSeconds: 300
+  allowedLatenessSeconds: 60
+  stateTtlSeconds: 86400
+  checkpointIntervalMs: 30000
+  restartAttempts: 3
+  restartDelaySeconds: 10
+
+storage:
+  createClaim: true
+  existingClaim: ""
+  storageClassName: rwx
+  size: 10Gi
+  accessModes:
+    - ReadWriteMany
+  retainClaim: true
+
+nodeSelector: {}
+tolerations: []
+
+resources:
+  launcher:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 768Mi
+  jobManager:
+    requests:
+      cpu: 500m
+      memory: 1280Mi
+    limits:
+      memory: 1536Mi
+  taskManager:
+    requests:
+      cpu: "1"
+      memory: 1920Mi
+    limits:
+      memory: 2304Mi
+
+emptyDir:
+  logSizeLimit: 256Mi
+  tmpSizeLimit: 256Mi

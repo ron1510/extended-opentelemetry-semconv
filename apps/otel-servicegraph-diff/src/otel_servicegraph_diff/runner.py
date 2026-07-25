@@ -12,7 +12,6 @@ from extended_otel_semconv.graph.interaction import (
     InteractionDlqEvent,
     InteractionObservation,
     JsonValue,
-    digest,
     observation_from_metric_point,
 )
 from extended_otel_semconv.graph.metrics import (
@@ -79,21 +78,5 @@ def iter_parsed_payloads(payload: str) -> Iterator[ParsedPayload]:
         )
 
 
-def iter_observations_or_dlq(payload: str) -> Iterator[InteractionObservation | InteractionDlqEvent]:
-    """Compatibility iterator retained for callers that consume domain objects."""
-    for parsed in iter_parsed_payloads(payload):
-        if isinstance(parsed, ParsedObservation):
-            yield parsed.observation
-        else:
-            yield parsed.rejection
-
-
 def event_record(event_json: str, interaction_id: str) -> KafkaOutputRecord:
     return KafkaOutputRecord(key=interaction_id, value=event_json)
-
-
-def dlq_record(rejection: InteractionDlqEvent) -> KafkaOutputRecord:
-    return KafkaOutputRecord(
-        key=digest({"payload": rejection.payload}),
-        value=rejection.model_dump_json(),
-    )

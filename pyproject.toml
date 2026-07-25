@@ -1,6 +1,5 @@
 [dependency-groups]
 dev = [
-  "confluent-kafka==2.15.0",
   "hypothesis==6.158.0",
   "pyright==1.1.411",
   "pytest==9.1.1",
@@ -11,9 +10,15 @@ dev = [
 pythonpath = [
   "packages/extended-opentelemetry-semconv/src",
   "apps/otel-servicegraph-diff/src",
-  "tools",
+  "apps/servicegraph-demo/src",
+  "apps/servicegraph-ui/src",
 ]
-testpaths = ["tests", "apps/otel-servicegraph-diff/tests"]
+testpaths = [
+  "tests",
+  "apps/otel-servicegraph-diff/tests",
+  "apps/servicegraph-demo/tests",
+  "apps/servicegraph-ui/tests",
+]
 
 [tool.ruff]
 exclude = [
@@ -29,7 +34,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["RUF043"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["extended_otel_semconv", "extended_otel_semconv_devtools", "otel_servicegraph_diff"]
+known-first-party = ["extended_otel_semconv", "otel_servicegraph_diff", "servicegraph_demo"]
 
 [tool.pyright]
 include = [
@@ -37,11 +42,16 @@ include = [
   "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/graph/metrics.py",
   "apps/otel-servicegraph-diff/src",
   "apps/otel-servicegraph-diff/tests",
-  "tools/extended_otel_semconv_devtools/confidence",
+  "apps/servicegraph-demo/src",
+  "apps/servicegraph-demo/tests",
+  "apps/servicegraph-ui/src",
+  "apps/servicegraph-ui/tests",
 ]
 extraPaths = [
   "packages/extended-opentelemetry-semconv/src",
   "apps/otel-servicegraph-diff/src",
+  "apps/servicegraph-demo/src",
+  "apps/servicegraph-ui/src",
 ]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
