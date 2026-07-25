@@ -1,0 +1,70 @@
+# Extended OpenTelemetry Semantic Conventions
+
+Build a live, organization-specific topology from OpenTelemetry.
+
+This project extends the OpenTelemetry entity model with entities and
+relationships that matter to your environment, generates the code and
+Collector configuration needed to observe them, and maintains their lifecycle
+as a Kafka event stream.
+
+```text
+OTLP traces
+  -> trace-affine OpenTelemetry Collectors
+  -> service-graph metrics
+  -> Kafka
+  -> stateful Flink interaction engine
+  -> upsert and delete events
+  -> any downstream projection
+```
+
+## Why use it?
+
+Traditional service graphs primarily show that one service calls another. This
+project can also describe the context around that interaction:
+
+- application endpoints exposed by a service;
+- namespaces containing services;
+- Kubernetes pods running service instances;
+- containers, processes, and runtimes;
+- repositories and revisions used to build a service;
+- your own domain-specific entities and relationships.
+
+The registry is the source of truth. It generates typed Pydantic entities,
+runtime relationship metadata, and the Collector dimensions that carry entity
+attributes into the service-graph stream.
+
+## What the runtime guarantees
+
+- All spans from a trace are routed to the same service-graph backend.
+- Flink is the sole owner of interaction state and staleness.
+- New and changed interactions produce `upsert` commands.
+- Stale interactions produce explicit `delete` commands.
+- Kafka records are keyed by deterministic interaction IDs.
+- Downstream consumers do not need their own TTL policy.
+
+Delivery is at least once. Event IDs and graph identifiers are deterministic so
+consumers can apply commands idempotently.
+
+## Repository components
+
+| Component | Responsibility |
+| --- | --- |
+| `packages/extended-opentelemetry-semconv` | Registry validation, generated entities, OTLP parsing, and pure graph transitions |
+| `apps/otel-servicegraph-diff` | PyFlink Kafka source, keyed state, timers, checkpoints, and event sink |
+| `apps/servicegraph-ui` | Optional SQLite projection, HTTP API, and graph interface |
+| `apps/servicegraph-demo` | Optional long-running synthetic OTLP traffic |
+| `deploy/helm/servicegraph-collector` | Trace router and stateful service-graph extraction |
+| `deploy/helm/servicegraph-flink` | Native Flink Application Mode submission and storage |
+| `deploy/helm/servicegraph-ui` | Optional visualization service |
+| `deploy/helm/servicegraph-demo` | Optional traffic generator |
+
+Kafka and topic creation remain platform responsibilities. Deployment uses
+standard Kubernetes resources, Helm, and no CRDs.
+
+## Choose a path
+
+- [Run the complete system locally](getting-started/quickstart.md)
+- [Understand the semantic entity model](concepts/semantic-model.md)
+- [Add your first custom entity](getting-started/custom-entity.md)
+- [Deploy to an existing Kubernetes cluster](deployment-and-operations.md)
+- [Consume the interaction event stream](reference/event-schema.md)

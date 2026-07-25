@@ -1,7 +1,11 @@
 # Extended OpenTelemetry Semantic Conventions
 
-This project extends the OpenTelemetry entity model and turns service-graph
-telemetry into a typed interaction event stream.
+Define the entities and relationships that matter to your organization, derive
+them from OpenTelemetry, and maintain them as a live graph.
+
+The project merges a pinned OpenTelemetry semantic-conventions registry with
+your extensions, generates typed entity models and Collector dimensions, and
+turns service-graph telemetry into an explicit interaction event stream.
 
 ```text
 OTLP traces
@@ -31,16 +35,28 @@ Helm only and requires no CRDs or Kubernetes operator.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Deployment and operations](docs/deployment-and-operations.md)
-- [Development and release](docs/development.md)
-- [Registry and upstream maintenance](docs/registry-extensions.md)
+The MkDocs site covers the semantic model, custom entities, configuration,
+deployment, operations, event contracts, and development.
+
+```powershell
+python -m pip install mkdocs-material==9.7.7
+python -m mkdocs serve
+```
+
+Start with:
+
+- [Documentation home](docs/index.md)
+- [Local quickstart](docs/getting-started/quickstart.md)
+- [Your first custom entity](docs/getting-started/custom-entity.md)
+- [Kubernetes deployment](docs/deployment-and-operations.md)
+- [Interaction event schema](docs/reference/event-schema.md)
 
 ## Validation
 
 ```powershell
 python scripts\generate_entities.py --check
 python scripts\generate_collector_dimensions.py --check
+python -m mkdocs build --strict
 python -m ruff check .
 python -m pyright
 python -m pytest

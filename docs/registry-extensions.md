@@ -1,50 +1,193 @@
-# Registry And Upstream Maintenance
+# Registry Extensions
 
-Extensions live under `model/extensions`. Use them only for entities,
-attributes, and relationships that OpenTelemetry does not already define.
-Extension entities may reference upstream attributes.
+Registry extensions define what your graph can observe. They are the primary
+customization mechanism for the project.
 
-Runtime entity classes are generated only for entities with at least one
-identifying attribute. Relationships create graph edges when their source and
-target entities are observed together. A `service -> service` dependency is
-reserved for service-graph telemetry.
+## Layout
 
-The generators enforce:
+Place YAML files anywhere below `model/extensions`. Files are loaded
+recursively in sorted order. Organize them by domain:
 
-- no upstream attribute or entity redefinition;
-- valid entity attribute references;
-- valid relationship source and target entities;
-- known relationship source signals;
-- no duplicate extension definitions.
+```text
+model/extensions/
+  app/
+    entities.yaml
+  business/
+    registry.yaml
+    entities.yaml
+    relationships.yaml
+  graph/
+    relationships.yaml
+```
 
-After changing an extension, run:
+Each file contains a `groups` list. Recognized group types are
+`attribute_group`, `entity`, and `relationship`.
 
-```powershell
-python scripts\generate_entities.py
-python scripts\generate_collector_dimensions.py
+## Define attributes
+
+Use an attribute group only for attributes that are not already defined by the
+pinned OpenTelemetry model:
+
+```yaml
+groups:
+  - id: registry.business
+    type: attribute_group
+    attributes:
+      - id: business.capability.name
+        type: string
+        stability: development
+        brief: The stable name of a business capability.
+```
+
+Generated scalar types include `string`, `int`, `double`, `boolean`, and
+enum-style mappings with `members`. Other types can exist in the registry but
+are not selected as Collector service-graph dimensions.
+
+## Define entities
+
+```yaml
+groups:
+  - id: entity.business.capability
+    type: entity
+    name: business.capability
+    stability: development
+    brief: A capability implemented by one or more services.
+    attributes:
+      - ref: business.capability.name
+        requirement_level: required
+        role: identifying
+```
+
+Rules:
+
+- `id` and `name` must be unique among extensions;
+- the entity name must not redefine an upstream entity;
+- every attribute reference must exist upstream or in extensions;
+- at least one `role: identifying` reference is required for code generation;
+- all identifying attributes are required to instantiate that entity;
+- non-identifying attributes become optional generated fields.
+
+Generated class names derive from entity names. For example,
+`business.capability` becomes `BusinessCapability`.
+
+Entity IDs contain the type and URL-encoded identifying values in registry
+order:
+
+```text
+business.capability:order-fulfillment
+```
+
+Changing identifying attributes is an identity migration. Existing and new IDs
+will coexist until old interactions expire or downstream state is rebuilt.
+
+## Define relationships
+
+```yaml
+groups:
+  - id: relationship.service_implements_business_capability
+    type: relationship
+    name: implements
+    source_entity: service
+    target_entity: business.capability
+    source_signals: [service_graph]
+    stability: development
+    brief: A service implements an observed business capability.
+```
+
+Rules:
+
+- relationship IDs must be unique;
+- source and target entities must exist;
+- source signals may be `trace` or `service_graph`;
+- both endpoint entities must be observed together;
+- same-entity structural expansion is skipped;
+- service-to-service dependencies require an explicitly allowed relationship.
+
+The supplied deployed pipeline materializes `service_graph` relationships.
+`trace` remains part of the registry model for library-level graph operations
+and future raw-trace pipelines.
+
+## Generated artifacts
+
+Run:
+
+```console
+python scripts/generate_entities.py
+python scripts/generate_collector_dimensions.py
+```
+
+`generate_entities.py` produces:
+
+- domain modules below the package's `generated` directory;
+- generated public package exports;
+- packaged service-graph relationship metadata;
+- packaged upstream lock metadata.
+
+`generate_collector_dimensions.py` produces:
+
+```text
+deploy/helm/servicegraph-collector/files/dimensions.yaml
+```
+
+It selects attributes from every entity participating in a
+`service_graph` relationship. It excludes non-scalar types and template
+attributes ending in `.label`, `.annotation`, or `.selector`.
+
+## Cardinality review
+
+Before accepting generated dimensions, estimate:
+
+```text
+client combinations x server combinations x routes x connection types
+```
+
+Never use unbounded request, trace, session, or user identifiers as entity
+attributes carried through service-graph metrics. Kubernetes UIDs and service
+instance IDs are high-cardinality by nature; include them only when the graph
+needs instance-level identity and the pipeline is sized accordingly.
+
+## Validation
+
+Use check mode in CI:
+
+```console
+python scripts/generate_entities.py --check
+python scripts/generate_collector_dimensions.py --check
 python -m pytest
 ```
 
-## Upstream Snapshot
+Validation catches upstream redefinitions, duplicate extensions, unknown
+attribute references, unknown relationship endpoints, unsupported source
+signals, and stale generated files.
 
-The project vendors an exact OpenTelemetry model under
-`upstream/otel-semconv/<version>/model` and records its source in
-`upstream/otel-semconv.lock.json`. The snapshot is build input and is never
-downloaded at runtime.
+## Deploy a registry change
 
-To upgrade:
+1. Change the extension source.
+2. Regenerate both artifact sets.
+3. Review generated entity identity and dimensions.
+4. Run tests and type checks.
+5. Build a new immutable Flink runtime image.
+6. Upgrade the Collector chart from the same commit.
+7. Deploy Flink using the normal state-compatible upgrade process.
+8. Emit matching telemetry.
+9. Verify the new entity and edge through the output topic or UI API.
+
+The UI is generic and does not require code changes for a new type.
+
+## Upgrade the upstream snapshot
+
+The project vendors one exact OpenTelemetry model and records its source in
+`upstream/otel-semconv.lock.json`.
 
 1. Select an exact semantic-conventions release tag.
-2. Extract only its `model` directory under a new versioned directory.
+2. Extract only its `model` directory into a new versioned directory.
 3. Update `upstream/otel-semconv.lock.json`.
-4. Update hardcoded `UPSTREAM_MODEL` paths in both generators and registry
-   behavior tests.
-5. Regenerate entities and Collector dimensions.
-6. Run the complete validation set from `docs/development.md`.
-7. Remove the previous snapshot unless multiple versions are intentionally
-   supported.
+4. Update `UPSTREAM_MODEL` in both generators and related tests.
+5. Delete extensions that the new upstream version now owns.
+6. Regenerate all artifacts.
+7. Review class, identity, dimension, and relationship changes.
+8. Run the complete validation set.
+9. Remove the old snapshot unless multiple versions are intentional.
 
-Review generated changes carefully. An upstream upgrade can change public
-entity classes, identifying attributes, Collector dimensions, and graph shape.
-If upstream now owns an extension definition, delete the extension and use the
-upstream definition.
+An upstream upgrade can change the public Python API and graph identity. Treat
+it as a compatibility-sensitive release.
