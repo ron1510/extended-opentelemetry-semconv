@@ -21,12 +21,13 @@ Kafka. Non-zero deltas from either shard represent activity, while idle zero
 deltas do not refresh Flink expiry. Kafka separates service-graph extraction
 from interaction state.
 
-The Flink job runs in a dedicated native Kubernetes Application Mode cluster.
-The Helm launcher submits the application, then Flink creates the JobManager
-Deployment, Services, ConfigMaps, and TaskManager pods. Two JobManagers use
-Kubernetes high availability. One RWX claim stores HA metadata, checkpoints,
-and savepoints. The launcher, JobManagers, and TaskManagers use the same
-immutable image.
+The Flink job runs in a dedicated standalone Session cluster. Helm owns the
+JobManager and TaskManager Deployments, REST Service, configuration, and
+initial submission Job. One JobManager uses Kubernetes high availability so a
+replacement pod recovers the submitted job from retained metadata and its
+latest checkpoint. One RWX claim stores HA metadata, checkpoints, and
+savepoints. The submitter, JobManager, and TaskManagers use the same immutable
+image.
 
 ## Collector Dimensions
 
@@ -76,6 +77,6 @@ The semantic package owns interpretation and pure transitions. The Flink
 application owns Kafka, keyed state, timers, and checkpoints. The Collector
 chart owns trace routing and service-graph extraction. The demo chart owns
 optional synthetic OTLP traffic but no interaction state. The Flink chart owns
-submission, RBAC, pod templates, and persistent state configuration. The UI
+submission, RBAC, runtime Deployments, and persistent state configuration. The UI
 chart owns the optional projection Deployment, ClusterIP Service, and SQLite
 claim; it does not own interaction lifecycle decisions.

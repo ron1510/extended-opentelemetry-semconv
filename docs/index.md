@@ -54,7 +54,7 @@ consumers can apply commands idempotently.
 | `apps/servicegraph-ui` | Optional SQLite projection, HTTP API, and graph interface |
 | `apps/servicegraph-demo` | Optional long-running synthetic OTLP traffic |
 | `deploy/helm/servicegraph-collector` | Trace router and stateful service-graph extraction |
-| `deploy/helm/servicegraph-flink` | Native Flink Application Mode submission and storage |
+| `deploy/helm/servicegraph-flink` | Standalone Flink Session cluster, submission, and storage |
 | `deploy/helm/servicegraph-ui` | Optional visualization service |
 | `deploy/helm/servicegraph-demo` | Optional traffic generator |
 
@@ -64,6 +64,7 @@ standard Kubernetes resources, Helm, and no CRDs.
 ## Choose a path
 
 - [Run the complete system locally](getting-started/quickstart.md)
+- [Run and debug the PyFlink job in PyCharm](development/local-pyflink.md)
 - [Understand the semantic entity model](concepts/semantic-model.md)
 - [Add your first custom entity](getting-started/custom-entity.md)
 - [Deploy to an existing Kubernetes cluster](deployment-and-operations.md)

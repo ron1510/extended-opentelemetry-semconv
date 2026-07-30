@@ -1,8 +1,8 @@
 # Flink Job Configuration
 
-The Flink chart submits one PyFlink job in native Kubernetes Application Mode.
-The launcher, JobManagers, and TaskManagers use the same immutable runtime
-image.
+The Flink chart runs a standalone Session cluster and submits one PyFlink job
+through its internal REST Service. The submitter, JobManager, and TaskManagers
+use the same immutable runtime image.
 
 ## Application sizing
 
@@ -10,25 +10,26 @@ image.
 application:
   clusterId: servicegraph-diff
   parallelism: 3
-  jobManagerReplicas: 2
+  jobManagerReplicas: 1
+  taskManagerReplicas: 2
   taskManagerSlots: 2
-  jobManagerCpu: "0.5"
-  taskManagerCpu: "1"
   jobManagerProcessMemory: 1200m
   taskManagerProcessMemory: 1800m
 ```
 
-Flink creates TaskManagers dynamically according to parallelism and available
-slots. Kubernetes resource limits must remain above the corresponding Flink
-process-memory values.
+Helm maintains the configured TaskManager replica count. Available execution
+capacity is `taskManagerReplicas * taskManagerSlots`; it must cover job
+parallelism. Kubernetes memory limits must remain above the corresponding
+Flink process-memory values.
 
-The cluster ID must be unique within a namespace. Do not submit a second
-application with the same ID.
+The cluster ID and fixed job ID must be unique within a namespace.
 
 ## Interaction settings
 
 ```yaml
 job:
+  fixedJobId: "00000000000000000000000000000001"
+  allowNonRestoredState: false
   groupId: interaction-diff-engine
   interactionTtlSeconds: 300
   allowedLatenessSeconds: 60
@@ -40,6 +41,8 @@ job:
 
 | Value | Meaning |
 | --- | --- |
+| `fixedJobId` | Stable 32-hex job ID used for recovery and duplicate prevention |
+| `allowNonRestoredState` | Permit an upgrade to discard savepoint state that no longer maps to an operator |
 | `interactionTtlSeconds` | Inactivity period before Flink emits a delete |
 | `allowedLatenessSeconds` | Out-of-order bound used to generate watermarks |
 | `stateTtlSeconds` | Cleanup TTL for keyed Flink state |
@@ -97,20 +100,54 @@ clusters; validate the storage system's availability guarantees separately.
 With `retainClaim: true`, Helm annotates a created claim with
 `helm.sh/resource-policy: keep`. Uninstalling the release does not delete it.
 
-## Why Helm renders a Job, not the Flink Deployment
+## Runtime and submission
 
-The chart's post-install Job runs:
+Helm renders the JobManager and TaskManager Deployments directly. A
+post-install Job waits for the REST Service and runs:
 
 ```text
-flink run --target kubernetes-application
+flink run --detached -m servicegraph-diff-rest:8081 --pyModule otel_servicegraph_diff.cli
 ```
 
-The Flink client then creates the long-running JobManager Deployment, Services,
-ConfigMaps, and TaskManager pods. Those resources do not appear in
-`helm template` because Flink creates them after submission.
+The submitter skips submission if the fixed job ID is already active and
+rejects accidental reuse of a terminal job ID.
 
-The ServiceAccount receives namespace-scoped permissions to manage only the
-resource types Flink requires.
+On every Helm upgrade, a `pre-upgrade` Job gracefully stops the active job and
+records its savepoint path on the state claim. The JobManager and TaskManagers
+then roll to the new Helm revision. The submitter runs as a `post-upgrade` hook
+and restores the new package and job configuration from the savepoint with the
+same fixed job ID.
+
+Keep `application.clusterId`, `job.fixedJobId`, and the state claim unchanged
+across this operation. The automatic upgrade fails closed if the active job is
+missing, the savepoint cannot be created, or the new job cannot restore all
+savepoint state. `job.allowNonRestoredState=true` relaxes only the final state
+mapping check and should be used for reviewed topology changes.
+
+Kubernetes HA stores job metadata pointers in ConfigMaps and durable metadata
+on the state claim. When the JobManager pod is replaced, Flink recovers the
+same job and restores keyed state and source progress from the latest completed
+checkpoint. One JobManager means recovery includes brief downtime.
+
+The runtime ServiceAccount needs namespace-scoped ConfigMap CRUD/list/watch.
+Set `serviceAccount.create=false` and `rbac.create=false` to use a
+platform-provided account. A workload does not select an existing RoleBinding
+by name. The existing RoleBinding must already name the configured
+ServiceAccount as a subject.
+
+## Logs
+
+Flink writes control-plane logs to JobManager stdout and operator, Kafka, and
+Python worker logs to TaskManager stdout. Set `logging.rootLevel` to control
+the root level; the default is `INFO`.
+
+```console
+kubectl logs -n servicegraph-system \
+  deployment/processing-servicegraph-flink-jobmanager --follow
+kubectl logs -n servicegraph-system \
+  deployment/processing-servicegraph-flink-taskmanager --follow --prefix
+kubectl logs -n servicegraph-system <pod-name> --previous
+```
 
 ## Environment mapping
 
@@ -137,5 +174,5 @@ helm template processing deploy/helm/servicegraph-flink \
   --values internal-flink-values.yaml
 ```
 
-The rendered output validates the launcher and its dependencies, not the
-runtime resources Flink creates later.
+The rendered output includes the complete runtime topology, the install and
+upgrade submitter, and the pre-upgrade savepoint hook.

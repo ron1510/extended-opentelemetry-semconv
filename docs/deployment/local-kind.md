@@ -85,20 +85,26 @@ helm upgrade --install processing deploy/helm/servicegraph-flink `
   --set image.ref=extended-otel-flink-runtime:2.2.1-java11 `
   --set image.pullPolicy=IfNotPresent `
   --set application.parallelism=1 `
-  --set application.jobManagerReplicas=2 `
+  --set application.jobManagerReplicas=1 `
+  --set application.taskManagerReplicas=1 `
   --set application.taskManagerSlots=1 `
   --set 'streamContract.kafka.brokers[0]=streaming:9093' `
   --set streamContract.kafka.security.protocol=PLAINTEXT `
   --set storage.storageClassName=standard `
   --set storage.size=2Gi `
   --set 'storage.accessModes[0]=ReadWriteOnce' `
+  --set podSecurityContext.runAsUser=9999 `
+  --set podSecurityContext.runAsGroup=9999 `
+  --set podSecurityContext.fsGroup=9999 `
   --set job.interactionTtlSeconds=30 `
   --set job.allowedLatenessSeconds=2 `
   --set job.stateTtlSeconds=120 `
   --set job.checkpointIntervalMs=5000 `
   --timeout 10m
 
-kubectl rollout status deployment/servicegraph-diff `
+kubectl rollout status deployment/processing-servicegraph-flink-jobmanager `
+  --namespace servicegraph-e2e --timeout=10m
+kubectl rollout status deployment/processing-servicegraph-flink-taskmanager `
   --namespace servicegraph-e2e --timeout=10m
 ```
 

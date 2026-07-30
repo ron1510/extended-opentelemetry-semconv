@@ -7,16 +7,17 @@ serviceAccount:
   create: true
   name: ""
 
+rbac:
+  create: true
+
 application:
   clusterId: servicegraph-diff
   parallelism: 3
-  jobManagerReplicas: 2
+  jobManagerReplicas: 1
+  taskManagerReplicas: 2
   taskManagerSlots: 2
-  jobManagerCpu: "0.5"
-  taskManagerCpu: "1"
   jobManagerProcessMemory: 1200m
   taskManagerProcessMemory: 1800m
-  taskManagerStartTimeout: 10m
 
 streamContract:
   kafka:
@@ -34,6 +35,8 @@ streamContract:
     interactionEvents: graph.interactions.events
 
 job:
+  fixedJobId: "00000000000000000000000000000001"
+  allowNonRestoredState: false
   groupId: interaction-diff-engine
   interactionTtlSeconds: 300
   allowedLatenessSeconds: 60
@@ -41,6 +44,9 @@ job:
   checkpointIntervalMs: 30000
   restartAttempts: 3
   restartDelaySeconds: 10
+
+logging:
+  rootLevel: INFO
 
 storage:
   createClaim: true
@@ -54,8 +60,13 @@ storage:
 nodeSelector: {}
 tolerations: []
 
+podSecurityContext:
+  runAsUser: null
+  runAsGroup: null
+  fsGroup: null
+
 resources:
-  launcher:
+  submitter:
     requests:
       cpu: 100m
       memory: 256Mi

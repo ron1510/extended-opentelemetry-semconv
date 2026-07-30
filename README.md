@@ -27,7 +27,7 @@ The repository contains:
 - `deploy/helm/servicegraph-collector`: the trace router and service-graph
   backend.
 - `deploy/helm/servicegraph-demo`: the optional traffic generator.
-- `deploy/helm/servicegraph-flink`: the native Flink Application Mode runtime.
+- `deploy/helm/servicegraph-flink`: the standalone Flink Session runtime.
 - `deploy/helm/servicegraph-ui`: the optional visualization service.
 
 Kafka and topic creation remain external platform concerns. Deployment uses

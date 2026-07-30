@@ -84,38 +84,66 @@ kubectl get endpoints -n servicegraph-system \
 Both routers must have the same ordered two-host static resolver. Tail or head
 sampling upstream must keep client and server spans consistently.
 
-## Flink launcher completed but no Deployment exists
+## Flink submitter failed
 
-The launcher is expected to complete after submission. Inspect its logs:
+The submitter is expected to complete after submission. Inspect its logs:
 
 ```console
 kubectl get jobs -n servicegraph-system
-kubectl logs -n servicegraph-system job/processing-servicegraph-flink-launcher
+kubectl logs -n servicegraph-system job/processing-servicegraph-flink-submitter
 ```
 
 Common causes:
 
 - image pull failure;
-- missing ServiceAccount permissions;
+- JobManager or REST Service not ready;
 - PVC not bound;
-- duplicate cluster ID;
+- a terminal job already uses `job.fixedJobId`;
 - missing Python or Java dependencies in the runtime image;
 - Kafka security settings rejected at application startup.
 
-The exact launcher name depends on the Helm release and overrides.
+The exact submitter name depends on the Helm release and overrides.
 
-## Helm installation waits forever
+## Flink upgrade savepoint failed
 
-If the Flink claim uses delayed volume binding, do not combine the Flink
-install with `--wait`. Helm waits for the PVC, while the storage class waits for
-a pod that the post-install launcher has not yet created.
+A failed `pre-upgrade` hook prevents Helm from changing the runtime
+Deployments. Inspect:
 
-Install without `--wait`, then wait for the Flink-created Deployment.
+```console
+kubectl logs -n servicegraph-system \
+  job/processing-servicegraph-flink-upgrade-savepoint
+```
+
+The hook requires the configured fixed-ID job to be active, the existing REST
+Service to be reachable, and the shared claim to be writable. Keep the cluster
+ID, fixed job ID, and claim unchanged in the upgrade values.
+
+If the savepoint succeeds but the post-upgrade submitter fails, inspect both
+hook Jobs. The savepoint path is retained under `/flink-state/upgrades`; fix
+the image or state incompatibility and retry the upgrade. The next pre-upgrade
+hook can reuse `latest.savepoint` when the job is already stopped. Do not start
+a fresh job without deciding whether losing the saved interaction state is
+acceptable.
+
+## Flink runtime does not recover
+
+Check the JobManager logs, HA ConfigMaps, and shared state claim:
+
+```console
+kubectl logs -n servicegraph-system \
+  deployment/processing-servicegraph-flink-jobmanager
+kubectl get configmaps -n servicegraph-system
+kubectl get pvc -n servicegraph-system
+```
+
+The runtime ServiceAccount must have ConfigMap CRUD/list/watch. It does not
+need finalizer permissions. Recovery also requires the existing claim and the
+same stable cluster and job IDs.
 
 ## Flink rejects records
 
 An increasing `rejected_records` counter means input records failed OTLP parsing
-or semantic normalization. Inspect JobManager logs and a sample Kafka record.
+or semantic normalization. Inspect TaskManager logs and a sample Kafka record.
 
 Only supported service-graph metric names and numeric points with required
 client/server fields affect state.

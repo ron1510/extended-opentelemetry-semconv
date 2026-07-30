@@ -86,6 +86,9 @@ installs Python packages and dependencies, and copies them into the Flink
 2.2.1 Java 11 image. The UI Docker build compiles frontend assets before
 installing its Python service. The demo image installs its package directly.
 
+For local MiniCluster execution and PyCharm setup, see
+[Run the PyFlink job locally](development/local-pyflink.md).
+
 ## Release checklist
 
 1. Run generated-file, Python, frontend, Helm, and documentation checks.

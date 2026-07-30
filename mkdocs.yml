@@ -75,4 +75,6 @@ nav:
       - Interaction Event Schema: reference/event-schema.md
       - UI HTTP API: reference/ui-api.md
       - Helm Values: reference/helm-values.md
-  - Development: development.md
+  - Development:
+      - Repository Development: development.md
+      - Run PyFlink Locally: development/local-pyflink.md

@@ -116,6 +116,12 @@ Create `internal-flink-values.yaml`:
 image:
   ref: registry.internal.example/extended-otel-flink-runtime:2.2.1-java11
 
+serviceAccount:
+  create: false
+  name: servicegraph-flink
+rbac:
+  create: false
+
 streamContract:
   kafka:
     brokers: [kafka.internal.example:9093]
@@ -131,9 +137,8 @@ streamContract:
     interactionEvents: graph.interactions.events
 
 storage:
-  storageClassName: rwx
-  accessModes: [ReadWriteMany]
-  size: 10Gi
+  createClaim: false
+  existingClaim: servicegraph-flink-state
 ```
 
 See [Collector configuration](configuration/collector.md), [Flink
@@ -170,21 +175,28 @@ helm upgrade --install collection deploy/helm/servicegraph-collector \
 helm upgrade --install processing deploy/helm/servicegraph-flink \
   --namespace servicegraph-system \
   --values internal-flink-values.yaml \
+  --wait \
   --timeout 10m
 ```
 
-The Flink launcher is a post-install hook. Native Flink creates the JobManager
-Deployment after submission, so wait for it explicitly:
+Helm creates the standalone JobManager and TaskManager Deployments before its
+post-install submitter runs. Confirm both workloads are ready:
 
 ```console
-kubectl rollout status deployment/servicegraph-diff \
+kubectl rollout status deployment/processing-servicegraph-flink-jobmanager \
+  --namespace servicegraph-system \
+  --timeout=10m
+kubectl rollout status deployment/processing-servicegraph-flink-taskmanager \
   --namespace servicegraph-system \
   --timeout=10m
 ```
 
-Avoid `helm --wait` for Flink when using a storage class with delayed binding:
-Helm may wait for the PVC before running the hook, while the PVC waits for a
-pod created by that hook.
+The existing ServiceAccount needs ConfigMap CRUD/list/watch for Kubernetes HA.
+It does not need Pod, Deployment, Service, CRD, or finalizer permissions.
+
+Subsequent `helm upgrade` operations stop the active job with a savepoint,
+roll the runtime image and configuration, and restore the same job ID from
+that savepoint. Keep the cluster ID, fixed job ID, and state claim stable.
 
 ## Install optional visualization
 
@@ -231,7 +243,6 @@ See [Monitoring](operations/monitoring.md) for commands and production signals.
 
 ## Uninstall behavior
 
-The Flink runtime resources are created by Flink rather than Helm and can
-require explicit cleanup. Retained Flink and UI claims are not deleted by Helm.
-Inspect and preserve checkpoints or savepoints before deleting runtime
-resources or storage.
+Helm deletes the Flink Deployments, Service, and configuration. Kubernetes HA
+ConfigMaps and retained Flink and UI claims can remain. Inspect and preserve
+checkpoints or savepoints before deleting runtime resources or storage.

@@ -8,9 +8,8 @@ The Collector, Flink application, and UI have different upgrade behavior.
 2. Confirm both Kafka topics are healthy.
 3. Confirm the Flink job is `RUNNING`.
 4. Confirm a recent checkpoint completed.
-5. For stateful Flink changes, create and verify a savepoint.
-6. Render and review the new chart.
-7. Confirm the new image can read the existing event and state schemas.
+5. Render and review the new chart.
+6. Confirm the new image can read the existing event and state schemas.
 
 ## Collector upgrade
 
@@ -31,44 +30,59 @@ After rollout, verify:
 
 ## Flink application upgrade
 
-The native Application Mode Deployment is owned by Flink, not directly by the
-Helm release. Treat an application upgrade as replacement:
+Every Helm upgrade is a controlled, stateful job replacement:
 
-1. Trigger a savepoint through the Flink REST API or CLI.
-2. Verify the savepoint exists on shared storage.
-3. Stop the current job according to the desired drain behavior.
-4. Remove old native runtime resources without deleting retained storage.
-5. deploy the new immutable image;
-6. submit with restoration from the verified savepoint when state continuity is
-   required;
-7. verify source offsets, job state, and checkpoints.
+1. The `pre-upgrade` hook confirms the fixed-ID job is active.
+2. It stops the job without draining and creates a canonical savepoint.
+3. It records revision-specific and `latest.savepoint` handoff files under
+   `/flink-state/upgrades` on the shared claim.
+4. Helm rolls the JobManager and TaskManagers to the new revision.
+5. The `post-upgrade` submitter loads the new package and configuration.
+6. It restores the same fixed job ID from the recorded savepoint.
 
-The current chart launcher does not expose a savepoint restore path as a Helm
-value. A manual restore requires adding the appropriate Flink submission
-argument or performing the submission directly. Test that procedure before a
-production upgrade.
+The pre-upgrade hook blocks resource changes when the savepoint fails. A
+post-upgrade restoration failure leaves the savepoint and hook logs available,
+but processing remains stopped until the incompatibility is fixed or the job
+is manually restored. A later upgrade attempt can reuse `latest.savepoint`
+when the previous attempt already stopped the job.
+
+Keep `application.clusterId`, `job.fixedJobId`, and the state claim unchanged
+across an automatic upgrade. Do not combine storage migration with an
+application upgrade.
+
+By default, every savepoint state entry must map to an operator in the new job.
+Set `job.allowNonRestoredState=true` only when a reviewed code change
+intentionally removes an operator and its state. This setting does not make
+incompatible serializers or changed keys safe.
 
 Stable operator UIDs and the keyed state descriptor
 `interaction-state-v1` support compatible restoration. Renaming operators,
 changing key definitions, or changing serialized state models can make a
 savepoint incompatible.
 
-## JobManager failover test
-
-Resolve the active REST endpoint, remove that JobManager pod, and verify
-leadership and checkpoint recovery:
+Inspect the lifecycle Jobs after an upgrade:
 
 ```powershell
-$leaderIp = kubectl get endpoints servicegraph-diff-rest `
-  --namespace servicegraph-system `
-  -o jsonpath='{.subsets[0].addresses[0].ip}'
+kubectl logs -n servicegraph-system `
+  job/processing-servicegraph-flink-upgrade-savepoint
+kubectl logs -n servicegraph-system `
+  job/processing-servicegraph-flink-submitter
+```
 
-$leaderPod = kubectl get pods --namespace servicegraph-system `
-  -l app=servicegraph-diff `
-  -o jsonpath="{.items[?(@.status.podIP=='$leaderIp')].metadata.name}"
+Then verify that the fixed-ID job is `RUNNING`, its restored checkpoint entry
+references a savepoint, and a new checkpoint completes.
 
-kubectl delete pod $leaderPod --namespace servicegraph-system
-kubectl rollout status deployment/servicegraph-diff `
+## JobManager failover test
+
+Remove the JobManager pod and verify checkpoint recovery:
+
+```powershell
+$jobManagerPod = kubectl get pods --namespace servicegraph-system `
+  -l app.kubernetes.io/instance=processing,app.kubernetes.io/component=jobmanager `
+  -o jsonpath='{.items[0].metadata.name}'
+
+kubectl delete pod $jobManagerPod --namespace servicegraph-system
+kubectl rollout status deployment/processing-servicegraph-flink-jobmanager `
   --namespace servicegraph-system --timeout=5m
 ```
 
@@ -114,5 +128,8 @@ A code rollback is safe only when the old image can read:
 - the current interaction event schema;
 - current SQLite schema, when rolling back the UI.
 
-Preserve the previous image digest, chart values, and a pre-upgrade savepoint
-until post-upgrade verification is complete.
+Preserve the previous image digest, chart values, and generated upgrade
+savepoint until post-upgrade verification is complete. Helm rollback changes
+the Kubernetes resources but does not itself guarantee that a failed
+application submission is running; verify or manually restore the job from the
+preserved savepoint.

@@ -1,8 +1,8 @@
 apiVersion: v2
 name: servicegraph-flink
-description: HA Flink Application Mode runtime for the service-graph diff job
+description: Standalone HA Flink runtime for the service-graph diff job
 type: application
-version: 0.1.0
+version: 0.3.0
 appVersion: "2.2.1"
 kubeVersion: ">=1.25.0-0"
 annotations:

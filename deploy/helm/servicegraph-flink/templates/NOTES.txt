@@ -1,3 +1,21 @@
-Flink Application Mode cluster: {{ .Values.application.clusterId }}
+Flink standalone Session cluster: {{ .Values.application.clusterId }}
 REST service: {{ .Values.application.clusterId }}-rest.{{ .Release.Namespace }}.svc:8081
 State claim: {{ include "servicegraph-flink.claimName" . }}
+
+JobManager logs:
+  kubectl logs --namespace {{ .Release.Namespace }} deployment/{{ include "servicegraph-flink.fullname" . }}-jobmanager --follow
+
+TaskManager logs:
+  kubectl logs --namespace {{ .Release.Namespace }} deployment/{{ include "servicegraph-flink.fullname" . }}-taskmanager --follow --prefix
+
+Previous container logs:
+  kubectl logs --namespace {{ .Release.Namespace }} <pod-name> --previous
+
+Submission logs:
+  kubectl logs --namespace {{ .Release.Namespace }} job/{{ include "servicegraph-flink.fullname" . }}-submitter
+
+Upgrade savepoint logs:
+  kubectl logs --namespace {{ .Release.Namespace }} job/{{ include "servicegraph-flink.fullname" . }}-upgrade-savepoint
+
+Every Helm upgrade stops the active job with a savepoint, rolls the runtime,
+and restores the job from that savepoint.

@@ -29,16 +29,21 @@ also available in the chart.
 | Path | Default | Purpose |
 | --- | --- | --- |
 | `image.ref` | internal example | Complete runtime image |
-| `application.clusterId` | `servicegraph-diff` | Native Flink cluster ID |
+| `application.clusterId` | `servicegraph-diff` | Standalone Flink cluster ID |
 | `application.parallelism` | `3` | Job parallelism |
-| `application.jobManagerReplicas` | `2` | HA JobManager count |
+| `application.jobManagerReplicas` | `1` | Restartable JobManager count |
+| `application.taskManagerReplicas` | `2` | Fixed TaskManager count |
 | `application.taskManagerSlots` | `2` | Slots per TaskManager |
+| `job.fixedJobId` | `000...001` | Stable Flink job ID |
+| `job.allowNonRestoredState` | `false` | Allow reviewed upgrades to discard unmapped savepoint state |
 | `job.groupId` | `interaction-diff-engine` | Kafka source group |
 | `job.interactionTtlSeconds` | `300` | Delete inactivity threshold |
 | `job.allowedLatenessSeconds` | `60` | Watermark out-of-order bound |
 | `job.stateTtlSeconds` | `86400` | Keyed-state cleanup TTL |
 | `job.checkpointIntervalMs` | `30000` | Checkpoint interval |
 | `job.restartAttempts` | `3` | Fixed-delay attempts |
+| `logging.rootLevel` | `INFO` | Flink console log level |
+| `rbac.create` | `true` | Create ConfigMap-only runtime RBAC |
 | `storage.createClaim` | `true` | Create state claim |
 | `storage.existingClaim` | empty | Use existing state claim |
 | `storage.storageClassName` | `rwx` | Shared storage class |
