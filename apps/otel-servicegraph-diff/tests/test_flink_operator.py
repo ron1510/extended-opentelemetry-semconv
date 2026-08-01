@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import cast
 
 import pytest
@@ -192,13 +193,60 @@ def test_operator_processing_timer_deletes_when_event_time_is_idle() -> None:
     assert timers.deleted_event == [6_001]
 
 
-def test_payload_parser_counts_and_discards_rejected_records() -> None:
+def test_payload_parser_counts_warns_and_discards_rejected_records(caplog: pytest.LogCaptureFixture) -> None:
     parser = _PayloadParser()
     counter = FakeCounter()
     parser._rejected_records = cast(Counter, counter)  # pyright: ignore[reportPrivateUsage]
 
-    assert tuple(parser.flat_map("{not-json")) == ()
+    with caplog.at_level(logging.WARNING):
+        assert tuple(parser.flat_map("{not-json")) == ()
+
     assert counter.value == 1
+    assert "discarding rejected servicegraph record" in caplog.text
+
+
+def test_operator_ignores_stale_processing_timer_and_empty_state() -> None:
+    state = FakeValueState[str]()
+    processing_timer = FakeValueState[int]()
+    timers = FakeTimerService(processing_time=20_000)
+    operator = _InteractionDiffProcess(ttl_seconds=5, state_ttl_seconds=60)
+    operator._state = cast(ValueState[str], state)  # pyright: ignore[reportPrivateUsage]
+    operator._processing_timer = cast(ValueState[int], processing_timer)  # pyright: ignore[reportPrivateUsage]
+    context = FakeOnTimerContext(timers, TimeDomain.PROCESSING_TIME)
+
+    assert tuple(
+        operator.on_timer(
+            25_000,
+            cast(KeyedProcessFunction.OnTimerContext, cast(OnTimerProcessContext, context)),
+        )
+    ) == ()
+
+    process_context = FakeProcessContext(timers)
+    tuple(
+        operator.process_element(
+            _parsed_observation(value=1, observed_at_unix_nano=1_000_000_001),
+            cast(KeyedProcessFunction.Context, cast(ProcessContext, process_context)),
+        )
+    )
+    processing_timer.update(30_000)
+
+    assert tuple(
+        operator.on_timer(
+            29_000,
+            cast(KeyedProcessFunction.OnTimerContext, cast(OnTimerProcessContext, context)),
+        )
+    ) == ()
+    assert state.serialized is not None
+    assert InteractionState.model_validate_json(state.serialized).active
+
+
+def test_operator_requires_runtime_state_initialization() -> None:
+    operator = _InteractionDiffProcess(ttl_seconds=5, state_ttl_seconds=60)
+
+    with pytest.raises(RuntimeError, match="state accessed before operator initialization"):
+        operator._require_state()  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(RuntimeError, match="processing timer state accessed before operator initialization"):
+        operator._require_processing_timer()  # pyright: ignore[reportPrivateUsage]
 
 
 def _parsed_observation(*, value: int, observed_at_unix_nano: int) -> ParsedObservation:

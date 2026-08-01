@@ -106,7 +106,7 @@ Helm renders the JobManager and TaskManager Deployments directly. A
 post-install Job waits for the REST Service and runs:
 
 ```text
-flink run --detached -m servicegraph-diff-rest:8081 --pyModule otel_servicegraph_diff.cli
+flink run --detached -m servicegraph-diff-rest:8081 --pyModule otel_servicegraph_diff.flink_job
 ```
 
 The submitter skips submission if the fixed job ID is already active and

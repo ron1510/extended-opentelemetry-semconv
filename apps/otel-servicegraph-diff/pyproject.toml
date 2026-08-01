@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-otel-servicegraph-diff = "otel_servicegraph_diff.cli:main"
+otel-servicegraph-diff = "otel_servicegraph_diff.flink_job:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

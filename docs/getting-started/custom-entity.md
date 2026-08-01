@@ -68,8 +68,7 @@ raw-trace graph stream.
 Run both generators from the repository root:
 
 ```console
-python scripts/generate_entities.py
-python scripts/generate_collector_dimensions.py
+python -m extended_otel_semconv.codegen
 ```
 
 This updates:
@@ -83,9 +82,8 @@ Review and commit all generated changes with the registry source.
 ## 5. Validate
 
 ```console
-python scripts/generate_entities.py --check
-python scripts/generate_collector_dimensions.py --check
-python -m pytest
+python -m extended_otel_semconv.codegen --check
+python -m pytest -m "not e2e"
 ```
 
 Validation rejects duplicate upstream definitions, unknown attributes, unknown

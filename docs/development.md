@@ -11,7 +11,7 @@ python -m pip install -e packages/extended-opentelemetry-semconv
 python -m pip install -e apps/otel-servicegraph-diff
 python -m pip install -e apps/servicegraph-demo
 python -m pip install -e apps/servicegraph-ui
-python -m pip install hypothesis pytest pyright ruff
+python -m pip install hypothesis pytest pytest-cov pyright ruff
 ```
 
 The PyFlink package is large. For package-only changes, install only the
@@ -23,8 +23,7 @@ Registry source is hand-written; generated Python, relationship metadata, and
 Collector dimensions are committed:
 
 ```console
-python scripts/generate_entities.py
-python scripts/generate_collector_dimensions.py
+python -m extended_otel_semconv.codegen
 ```
 
 Never manually patch generated modules or dimensions. Change registry source
@@ -33,11 +32,10 @@ and regenerate.
 ## Validation
 
 ```console
-python scripts/generate_entities.py --check
-python scripts/generate_collector_dimensions.py --check
+python -m extended_otel_semconv.codegen --check
 python -m ruff check .
 python -m pyright
-python -m pytest
+python -m pytest -m "not e2e"
 helm lint deploy/helm/servicegraph-collector
 helm lint deploy/helm/servicegraph-demo
 helm lint deploy/helm/servicegraph-flink

@@ -98,7 +98,7 @@ Create a Python run configuration with:
 | Setting | Value |
 | --- | --- |
 | Run kind | Module |
-| Module name | `otel_servicegraph_diff.cli` |
+| Module name | `otel_servicegraph_diff.flink_job` |
 | Python interpreter | `.venv312` |
 | Working directory | Repository root |
 
@@ -132,7 +132,7 @@ The same module can be run without PyCharm. Set the environment variables from
 the previous section and execute:
 
 ```powershell
-.\.venv312\Scripts\python.exe -m otel_servicegraph_diff.cli
+.\.venv312\Scripts\python.exe -m otel_servicegraph_diff.flink_job
 ```
 
 The local MiniCluster logs are written to the console and the PyFlink log

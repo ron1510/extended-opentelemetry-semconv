@@ -78,10 +78,9 @@ Only a relationship explicitly allowed by the registry is emitted.
 
 The generation pipeline connects the model to runtime behavior:
 
-1. `generate_entities.py` validates and merges both registry layers.
+1. `python -m extended_otel_semconv.codegen` validates and merges both registry layers.
 2. It generates typed entity parsers and packaged relationship metadata.
-3. `generate_collector_dimensions.py` selects scalar attributes used by
-   service-graph relationships.
+3. The same operation selects scalar attributes used by service-graph relationships.
 4. Collector backends include those dimensions in their metrics.
 5. Flink interprets client and server dimensions through the generated package.
 6. Interaction events carry normalized graph nodes and edges.

@@ -40,7 +40,7 @@ distributions that do not mutate the pod identity, set
 non-root IDs. The Flink image's built-in user is `9999`.
 
 The post-install submitter waits for the REST endpoint and submits
-`otel_servicegraph_diff.cli` with `job.fixedJobId`. A repeated install skips an
+`otel_servicegraph_diff.flink_job` with `job.fixedJobId`. A repeated install skips an
 already active job with that ID.
 
 Every Helm upgrade performs a stateful application replacement:

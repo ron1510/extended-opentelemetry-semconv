@@ -1,3 +1,6 @@
+# JAAS escaping is an internal security boundary tested directly.
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +12,7 @@ from otel_servicegraph_diff.config import (
     InteractionDiffConfig,
     KafkaSaslMechanism,
     KafkaSecurityProtocol,
+    _escape_jaas_value,
 )
 
 
@@ -88,3 +92,16 @@ def test_config_rejects_incomplete_or_inconsistent_kafka_security(
 ) -> None:
     with pytest.raises(ValidationError, match=message):
         InteractionDiffConfig.model_validate(overrides)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("plain", "plain"),
+        ('service"graph', 'service\\"graph'),
+        ("pass\\word", "pass\\\\word"),
+        ('both\\"', 'both\\\\\\"'),
+    ],
+)
+def test_jaas_values_escape_backslashes_before_quotes(value: str, expected: str) -> None:
+    assert _escape_jaas_value(value) == expected

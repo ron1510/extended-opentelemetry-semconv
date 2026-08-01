@@ -36,7 +36,7 @@ from extended_otel_semconv.graph.interaction import (
     apply_observation,
     expire_state,
 )
-from otel_servicegraph_diff.config import InteractionDiffConfig
+from otel_servicegraph_diff.config import InteractionDiffConfig, interaction_diff_config_from_env
 from otel_servicegraph_diff.runner import (
     ParsedObservation,
     RejectedRecord,
@@ -69,6 +69,11 @@ class Counter(Protocol):
     def inc(self, n: int = 1) -> None: ...
 
 
+def main() -> int:
+    run_flink_job(interaction_diff_config_from_env())
+    return 0
+
+
 def run_flink_job(config: InteractionDiffConfig) -> None:
     flink_config = Configuration()
     flink_config.set_string("restart-strategy.type", "fixed-delay")
@@ -85,6 +90,16 @@ def run_flink_job(config: InteractionDiffConfig) -> None:
     source = _kafka_source(config)
     event_sink = _kafka_sink(config, config.output_topic)
 
+    _configure_job_graph(env, config, source, event_sink)
+    env.execute("servicegraph-interaction-diff")
+
+
+def _configure_job_graph(
+    env: StreamExecutionEnvironment,
+    config: InteractionDiffConfig,
+    source: KafkaSource,
+    event_sink: KafkaSink,
+) -> None:
     payloads = (
         env.from_source(source, WatermarkStrategy.no_watermarks(), "servicegraph-otlp-json")
         .name("servicegraph-kafka-source")
@@ -116,8 +131,6 @@ def run_flink_job(config: InteractionDiffConfig) -> None:
         .uid("serialize-interaction-events")
     )
     event_rows.sink_to(event_sink).name("interaction-events").uid("interaction-events")
-
-    env.execute("servicegraph-interaction-diff")
 
 
 def _kafka_source(config: InteractionDiffConfig) -> KafkaSource:
@@ -302,3 +315,7 @@ def _event_row(event: InteractionEvent) -> Row:
 
 def _timer_millis(unix_nano: int) -> int:
     return (unix_nano + 999_999) // 1_000_000
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

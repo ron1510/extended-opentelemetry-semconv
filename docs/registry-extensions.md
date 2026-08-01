@@ -112,18 +112,16 @@ and future raw-trace pipelines.
 Run:
 
 ```console
-python scripts/generate_entities.py
-python scripts/generate_collector_dimensions.py
+python -m extended_otel_semconv.codegen
 ```
 
-`generate_entities.py` produces:
+The code-generation module produces:
 
 - domain modules below the package's `generated` directory;
 - generated public package exports;
 - packaged service-graph relationship metadata;
-- packaged upstream lock metadata.
-
-`generate_collector_dimensions.py` produces:
+- packaged upstream lock metadata;
+- Collector service-graph dimensions at:
 
 ```text
 deploy/helm/servicegraph-collector/files/dimensions.yaml
@@ -148,12 +146,11 @@ needs instance-level identity and the pipeline is sized accordingly.
 
 ## Validation
 
-Use check mode in CI:
+Use check mode before committing:
 
 ```console
-python scripts/generate_entities.py --check
-python scripts/generate_collector_dimensions.py --check
-python -m pytest
+python -m extended_otel_semconv.codegen --check
+python -m pytest -m "not e2e"
 ```
 
 Validation catches upstream redefinitions, duplicate extensions, unknown

@@ -77,4 +77,5 @@ nav:
       - Helm Values: reference/helm-values.md
   - Development:
       - Repository Development: development.md
+      - Testing: development/testing.md
       - Run PyFlink Locally: development/local-pyflink.md

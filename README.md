@@ -54,12 +54,11 @@ Start with:
 ## Validation
 
 ```powershell
-python scripts\generate_entities.py --check
-python scripts\generate_collector_dimensions.py --check
+python -m extended_otel_semconv.codegen --check
 python -m mkdocs build --strict
 python -m ruff check .
 python -m pyright
-python -m pytest
+python -m pytest -m "not e2e"
 helm lint deploy/helm/servicegraph-collector
 helm lint deploy/helm/servicegraph-demo
 helm lint deploy/helm/servicegraph-flink

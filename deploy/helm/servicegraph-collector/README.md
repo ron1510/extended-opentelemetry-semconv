@@ -24,5 +24,5 @@ backend count remaps the trace hash ring and can split in-flight trace pairs.
 Generate registry-derived dimensions with:
 
 ```powershell
-python scripts\generate_collector_dimensions.py
+python -m extended_otel_semconv.codegen
 ```

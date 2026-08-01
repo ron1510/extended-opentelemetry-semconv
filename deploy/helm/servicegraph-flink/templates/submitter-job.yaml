@@ -130,7 +130,7 @@ spec:
                 -Dpython.client.executable=/usr/local/bin/python \
                 -Dpython.executable=/usr/local/bin/python \
                 "${restore_args[@]}" \
-                --pyModule otel_servicegraph_diff.cli \
+                --pyModule otel_servicegraph_diff.flink_job \
                 --pyFiles /opt/application
           env:
             - name: FLINK_REST_URL

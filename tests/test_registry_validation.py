@@ -94,3 +94,55 @@ groups:
 
     with pytest.raises(AssertionError, match="references unknown source entity missing.source"):
         validate_extension_model(UPSTREAM_MODEL, extension_model)
+
+
+def test_extension_entity_must_reference_known_attribute(tmp_path: Path) -> None:
+    extension_model = tmp_path / "extensions"
+    extension_model.mkdir()
+    (extension_model / "entities.yaml").write_text(
+        """
+groups:
+  - id: entity.custom
+    type: entity
+    name: custom
+    attributes:
+      - ref: missing.attribute
+        role: identifying
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match="custom references unknown attribute missing.attribute"):
+        validate_extension_model(UPSTREAM_MODEL, extension_model)
+
+
+@pytest.mark.parametrize(
+    ("target", "signals", "message"),
+    [
+        ("missing.target", "[trace]", "references unknown target entity missing.target"),
+        ("service", "[logs]", "uses unknown source signal logs"),
+    ],
+)
+def test_extension_relationship_rejects_unknown_target_or_signal(
+    tmp_path: Path,
+    target: str,
+    signals: str,
+    message: str,
+) -> None:
+    extension_model = tmp_path / "extensions"
+    extension_model.mkdir()
+    (extension_model / "relationships.yaml").write_text(
+        f"""
+groups:
+  - id: relationship.invalid
+    type: relationship
+    name: calls
+    source_entity: service
+    target_entity: {target}
+    source_signals: {signals}
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match=message):
+        validate_extension_model(UPSTREAM_MODEL, extension_model)

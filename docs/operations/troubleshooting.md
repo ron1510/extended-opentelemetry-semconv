@@ -36,8 +36,7 @@ Verify:
 - the affected telemetry was emitted after deployment.
 
 ```console
-python scripts/generate_entities.py --check
-python scripts/generate_collector_dimensions.py --check
+python -m extended_otel_semconv.codegen --check
 ```
 
 Existing upserts do not gain new entities until new activity produces an
