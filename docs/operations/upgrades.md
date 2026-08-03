@@ -26,7 +26,7 @@ After rollout, verify:
 - both fixed backend DNS names resolve;
 - both backends export delta metrics;
 - input topic offsets advance;
-- Flink does not produce a burst of incorrect interaction churn.
+- Flink does not produce a burst of incorrect graph-element churn.
 
 ## Flink application upgrade
 
@@ -56,7 +56,8 @@ intentionally removes an operator and its state. This setting does not make
 incompatible serializers or changed keys safe.
 
 Stable operator UIDs and the keyed state descriptor
-`interaction-state-v1` support compatible restoration. Renaming operators,
+`interaction-state-v2` and `graph-element-aggregate-state-v2` support
+compatible restoration within schema 2.0. Renaming operators,
 changing key definitions, or changing serialized state models can make a
 savepoint incompatible.
 
@@ -110,7 +111,7 @@ Adding an entity can change:
 - generated package exports;
 - Collector dimensions and cardinality;
 - graph nodes and edges in upsert events;
-- payload hashes for affected interactions.
+- payload hashes for affected graph elements.
 
 Deploy the Collector dimensions and Flink runtime from the same registry
 revision. Consumers should ignore unknown entity and edge types but validate
@@ -125,7 +126,7 @@ A code rollback is safe only when the old image can read:
 
 - the current Flink savepoint or checkpoint state;
 - current Kafka records;
-- the current interaction event schema;
+- the current graph-element event schema;
 - current SQLite schema, when rolling back the UI.
 
 Preserve the previous image digest, chart values, and generated upgrade

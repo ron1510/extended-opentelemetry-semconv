@@ -1,61 +1,38 @@
-"""Validated Kafka and HTTP models for the visualization projection."""
+"""Validated Kafka and HTTP models for the graph-element projection."""
 
 from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import Field, TypeAdapter
 
-from extended_otel_semconv.graph.interaction import InteractionPayload
+from extended_otel_semconv.graph.elements import (
+    FrozenModel,
+    GraphEdge,
+    GraphElementDeleteEvent,
+    GraphElementEvent,
+    GraphElementUpsertEvent,
+    GraphNode,
+)
 
-
-class FrozenModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class ProjectionEventBase(FrozenModel):
-    schema_version: Literal["1.0", "1.1"]
-    event_id: str = Field(min_length=1)
-    event_type: Literal["interaction_state_changed"]
-    interaction_id: str = Field(min_length=1)
-    observed_at_unix_nano: int = Field(gt=0)
-    emitted_at_unix_ms: int = Field(ge=0)
-
-
-class ProjectionUpsertEvent(ProjectionEventBase):
-    operation: Literal["upsert"]
-    payload_hash: str = Field(min_length=1)
-    interaction: InteractionPayload
-
-
-class ProjectionDeleteEvent(ProjectionEventBase):
-    operation: Literal["delete"]
-    payload_hash: None = None
-    interaction: None = None
-
-
-ProjectionEvent = Annotated[
-    ProjectionUpsertEvent | ProjectionDeleteEvent,
-    Field(discriminator="operation"),
-]
+ProjectionEvent = GraphElementEvent
+ProjectionUpsertEvent = GraphElementUpsertEvent
+ProjectionDeleteEvent = GraphElementDeleteEvent
 PROJECTION_EVENT_ADAPTER: TypeAdapter[ProjectionEvent] = TypeAdapter(ProjectionEvent)
 
 
-class GraphNodeView(FrozenModel):
-    id: str
-    type: str
-    attributes: dict[str, object] = Field(default_factory=dict)
-    interaction_count: int = Field(ge=1)
+class GraphNodeView(GraphNode):
+    pass
 
 
 class GraphEdgeView(FrozenModel):
+    kind: Literal["edge"] = "edge"
     id: str
+    type: str
     source: str
     target: str
-    type: str
     attributes: dict[str, object] = Field(default_factory=dict)
-    interaction_ids: tuple[str, ...]
-    interaction_count: int = Field(ge=1)
+    metrics: dict[str, int | float] = Field(default_factory=dict)
 
 
 class GraphView(FrozenModel):
@@ -66,28 +43,14 @@ class GraphView(FrozenModel):
     truncated: bool
 
 
-class EntityView(GraphNodeView):
-    interaction_ids: tuple[str, ...]
-
-
-class InteractionView(FrozenModel):
-    interaction_id: str
-    client: str
-    server: str
-    connection_type: str
-    dimensions: dict[str, object]
-    metrics: dict[str, int | float]
-    entities: tuple[dict[str, str], ...]
-    observed_at_unix_nano: int
-    emitted_at_unix_ms: int
-    payload_hash: str
+type ElementView = Annotated[GraphNode | GraphEdge, Field(discriminator="kind")]
 
 
 class EventView(FrozenModel):
     event_id: str
     operation: Literal["upsert", "delete"]
-    interaction_id: str
-    schema_version: Literal["1.0", "1.1"]
+    element_id: str
+    schema_version: Literal["2.0"]
     observed_at_unix_nano: int
     emitted_at_unix_ms: int
     partition: int
@@ -98,7 +61,7 @@ class StatusView(FrozenModel):
     consumer_running: bool
     consumer_error: str | None
     topic: str
-    interactions: int = Field(ge=0)
-    entities: int = Field(ge=0)
+    elements: int = Field(ge=0)
+    nodes: int = Field(ge=0)
     edges: int = Field(ge=0)
     last_event_at_unix_ms: int | None

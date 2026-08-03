@@ -12,15 +12,15 @@ OTLP traces
   -> trace-affine OpenTelemetry Collectors
   -> service-graph metrics
   -> Kafka
-  -> stateful Flink interaction engine
-  -> upsert and delete events
+  -> stateful Flink graph-element engine
+  -> node and edge upsert/delete events
   -> any downstream projection
 ```
 
 ## Why use it?
 
 Traditional service graphs primarily show that one service calls another. This
-project can also describe the context around that interaction:
+project also describes the topology around service activity:
 
 - application endpoints exposed by a service;
 - namespaces containing services;
@@ -36,10 +36,10 @@ attributes into the service-graph stream.
 ## What the runtime guarantees
 
 - All spans from a trace are routed to the same service-graph backend.
-- Flink is the sole owner of interaction state and staleness.
-- New and changed interactions produce `upsert` commands.
-- Stale interactions produce explicit `delete` commands.
-- Kafka records are keyed by deterministic interaction IDs.
+- Flink privately correlates observations and owns graph staleness.
+- New and changed graph elements produce complete `upsert` commands.
+- Elements with no active contributors produce explicit `delete` commands.
+- Kafka records are keyed by deterministic graph element IDs.
 - Downstream consumers do not need their own TTL policy.
 
 Delivery is at least once. Event IDs and graph identifiers are deterministic so
@@ -68,4 +68,4 @@ standard Kubernetes resources, Helm, and no CRDs.
 - [Understand the semantic entity model](concepts/semantic-model.md)
 - [Add your first custom entity](getting-started/custom-entity.md)
 - [Deploy to an existing Kubernetes cluster](deployment-and-operations.md)
-- [Consume the interaction event stream](reference/event-schema.md)
+- [Consume the graph element event stream](reference/event-schema.md)

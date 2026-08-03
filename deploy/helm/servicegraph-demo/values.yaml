@@ -18,11 +18,11 @@ collector:
 
 traffic:
   emitIntervalSeconds: 2
-  topologyChangeIntervalSeconds: 20
-  initialEdges: 2
-  maxActiveEdges: 6
-  requestsPerTick: 3
-  errorRate: 0.08
+  topologyChangeIntervalSeconds: 10
+  initialEdges: 10
+  maxActiveEdges: 18
+  requestsPerTick: 8
+  errorRate: 0.12
   serviceNamespace: shop
   instanceId: live-demo
   randomSeed: ""

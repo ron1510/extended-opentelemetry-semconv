@@ -1,4 +1,4 @@
-"""FastAPI application for the interaction graph projection."""
+"""FastAPI application for the graph-element projection."""
 
 # FastAPI registers these local endpoint functions through decorators.
 # pyright: reportUnusedFunction=false
@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from servicegraph_ui.config import VisualizationConfig
 from servicegraph_ui.consumer import ProjectionConsumer
-from servicegraph_ui.models import EntityView, EventView, GraphView, InteractionView, StatusView
+from servicegraph_ui.models import ElementView, EventView, GraphView, StatusView
 from servicegraph_ui.repository import ProjectionRepository
 
 
@@ -54,13 +54,13 @@ def create_app(
 
     @app.get("/api/v1/status", response_model=StatusView)
     def status() -> StatusView:
-        interactions, entities, edges = projection.counts()
+        elements, nodes, edges = projection.counts()
         return StatusView(
             consumer_running=consumer.status.running,
             consumer_error=consumer.status.error,
             topic=settings.topic,
-            interactions=interactions,
-            entities=entities,
+            elements=elements,
+            nodes=nodes,
             edges=edges,
             last_event_at_unix_ms=consumer.status.last_event_at_unix_ms,
         )
@@ -73,28 +73,15 @@ def create_app(
     ) -> GraphView:
         return projection.graph(q, entity_type, edge_type)
 
-    @app.get("/api/v1/entities", response_model=tuple[EntityView, ...])
-    def entities(
+    @app.get("/api/v1/elements", response_model=tuple[ElementView, ...])
+    def elements(
         q: str | None = Query(default=None, max_length=200),
-        entity_type: str | None = Query(default=None, max_length=100),
+        kind: str | None = Query(default=None, pattern="^(node|edge)$"),
+        element_type: str | None = Query(default=None, max_length=100),
         limit: int = Query(default=100, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
-    ) -> tuple[EntityView, ...]:
-        return projection.entities(q, entity_type, limit, offset)
-
-    @app.get("/api/v1/interactions", response_model=tuple[InteractionView, ...])
-    def interactions(
-        limit: int = Query(default=100, ge=1, le=500),
-        offset: int = Query(default=0, ge=0),
-    ) -> tuple[InteractionView, ...]:
-        return projection.interactions(limit, offset)
-
-    @app.get("/api/v1/interactions/{interaction_id}", response_model=InteractionView)
-    def interaction(interaction_id: str) -> InteractionView:
-        result = projection.interaction(interaction_id)
-        if result is None:
-            raise HTTPException(status_code=404, detail="interaction not found")
-        return result
+    ) -> tuple[ElementView, ...]:
+        return projection.elements(q, kind, element_type, limit, offset)
 
     @app.get("/api/v1/events", response_model=tuple[EventView, ...])
     def events(limit: int = Query(default=100, ge=1, le=1_000)) -> tuple[EventView, ...]:

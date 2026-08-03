@@ -1,110 +1,89 @@
-# Interaction Event Schema
+# Graph Element Event Schema
 
-The `graph.interactions.events` topic contains JSON commands keyed by
-`interaction_id`. The current producer schema is `1.1`.
+The compacted `graph.elements.events` topic contains JSON lifecycle commands
+keyed by `element_id`. The producer schema is `2.0`.
 
-## Common envelope
-
-Every command has:
+## Envelope
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `schema_version` | string | Currently `"1.1"` |
-| `event_id` | string | Deterministic SHA-256 event identifier |
-| `event_type` | string | `"interaction_state_changed"` |
+| `schema_version` | string | `"2.0"` |
+| `event_id` | string | Deterministic SHA-256 transition ID |
+| `event_type` | string | `"graph_element_state_changed"` |
 | `operation` | string | `"upsert"` or `"delete"` |
-| `interaction_id` | string | Deterministic interaction identifier and Kafka key |
-| `observed_at_unix_nano` | integer | Observation or expiry time |
-| `emitted_at_unix_ms` | integer | Wall-clock event emission time |
-| `payload_hash` | string or null | Hash of the upsert payload |
-| `interaction` | object or null | Current interaction for upserts |
+| `element_id` | string | Graph element ID and Kafka key |
+| `observed_at_unix_nano` | integer | Observation or final expiry time |
+| `emitted_at_unix_ms` | integer | Event emission wall-clock time |
+| `payload_hash` | string or null | Hash of the complete upsert element |
+| `element` | object or null | Complete node or edge on upsert |
 
-## Upsert example
+## Node upsert
 
 ```json
 {
-  "schema_version": "1.1",
-  "event_id": "a deterministic sha256 value",
-  "event_type": "interaction_state_changed",
+  "schema_version": "2.0",
+  "event_id": "sha256",
+  "event_type": "graph_element_state_changed",
   "operation": "upsert",
-  "interaction_id": "a deterministic sha256 value",
+  "element_id": "service:checkout-api",
   "observed_at_unix_nano": 1784977200000000000,
   "emitted_at_unix_ms": 1784977200500,
-  "payload_hash": "a deterministic sha256 value",
-  "interaction": {
-    "client": "storefront",
-    "server": "checkout-api",
-    "connection_type": "calls",
-    "dimensions": {
-      "server_http.request.method": "POST",
-      "server_http.route": "/checkout"
-    },
-    "metrics": {
-      "traces_service_graph_request_total": 3
-    },
-    "entities": [
-      {
-        "id": "service:storefront",
-        "type": "service"
-      },
-      {
-        "id": "service:checkout-api",
-        "type": "service"
-      }
-    ],
-    "graph": {
-      "nodes": [
-        {
-          "id": "service:storefront",
-          "type": "service",
-          "attributes": {
-            "service.name": "storefront"
-          }
-        }
-      ],
-      "edges": [
-        {
-          "source": "service:storefront",
-          "target": "service:checkout-api",
-          "type": "calls",
-          "attributes": {
-            "service_graph.request.total": 3
-          }
-        }
-      ]
+  "payload_hash": "sha256",
+  "element": {
+    "kind": "node",
+    "id": "service:checkout-api",
+    "type": "service",
+    "attributes": {
+      "service.name": "checkout-api",
+      "service.version": "2.4"
     }
   }
 }
 ```
 
-The exact dimensions depend on generated Collector configuration and emitted
-telemetry.
-
-## Delete example
+## Edge upsert
 
 ```json
 {
-  "schema_version": "1.1",
-  "event_id": "a deterministic sha256 value",
-  "event_type": "interaction_state_changed",
-  "operation": "delete",
-  "interaction_id": "a deterministic sha256 value",
-  "observed_at_unix_nano": 1784977500000000000,
-  "emitted_at_unix_ms": 1784977500100,
-  "payload_hash": null,
-  "interaction": null
+  "schema_version": "2.0",
+  "event_id": "sha256",
+  "event_type": "graph_element_state_changed",
+  "operation": "upsert",
+  "element_id": "edge:sha256",
+  "observed_at_unix_nano": 1784977200000000000,
+  "emitted_at_unix_ms": 1784977200500,
+  "payload_hash": "sha256",
+  "element": {
+    "kind": "edge",
+    "id": "edge:sha256",
+    "type": "calls",
+    "source_id": "service:storefront",
+    "target_id": "service:checkout-api",
+    "attributes": {},
+    "metrics": {
+      "service_graph.request.total": 3,
+      "service_graph.request.failed.total": 0
+    }
+  }
 }
 ```
 
-## Consumer rules
+## Delete
 
-1. Use the Kafka record key as the interaction key.
-2. Upsert the complete interaction payload on `upsert`.
-3. Remove that interaction on `delete`.
-4. Make both operations idempotent.
-5. Deduplicate by `event_id` when duplicate side effects matter.
-6. Do not infer deletion from wall-clock age.
-7. Reject unsupported major schema behavior explicitly.
+```json
+{
+  "schema_version": "2.0",
+  "event_id": "sha256",
+  "event_type": "graph_element_state_changed",
+  "operation": "delete",
+  "element_id": "service:checkout-api",
+  "observed_at_unix_nano": 1784977500000000000,
+  "emitted_at_unix_ms": 1784977500100,
+  "payload_hash": null,
+  "element": null
+}
+```
 
-Schema `1.1` added graph nodes and edges. The supplied UI reader accepts `1.0`
-and `1.1`, while the current Flink producer emits `1.1`.
+Consumers must treat upsert as complete replacement, delete by `element_id`,
+preserve per-key Kafka order, and avoid independent extraction or expiry logic.
+Deterministic event IDs support deduplication under at-least-once delivery.

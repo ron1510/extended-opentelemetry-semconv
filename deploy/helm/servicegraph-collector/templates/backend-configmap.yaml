@@ -28,8 +28,8 @@ data:
         send_batch_size: 256
       batch/servicegraph_metrics:
         timeout: 1s
-        send_batch_size: 256
-        send_batch_max_size: 512
+        send_batch_size: {{ .Values.backend.serviceGraph.metricBatchSize }}
+        send_batch_max_size: {{ .Values.backend.serviceGraph.metricBatchSize }}
     connectors:
       service_graph:
         dimensions:

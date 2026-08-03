@@ -54,7 +54,7 @@ Create:
 
 ```text
 otel.servicegraph.metrics
-graph.interactions.events
+graph.elements.events
 ```
 
 Choose partition counts for expected throughput and Flink parallelism. Both
@@ -134,7 +134,7 @@ streamContract:
       caKey: ca.crt
   topics:
     servicegraphMetrics: otel.servicegraph.metrics
-    interactionEvents: graph.interactions.events
+    interactionEvents: graph.elements.events
 
 storage:
   createClaim: false
@@ -235,9 +235,9 @@ services are explicitly desired.
 3. Confirm completed checkpoints continue increasing.
 4. Send paired client/server traces to the router.
 5. Confirm the metrics topic advances.
-6. Confirm an interaction upsert appears.
-7. Stop that interaction and wait for the configured TTL.
-8. Confirm Flink emits a delete and the UI removes it.
+6. Confirm node and edge upserts appear.
+7. Stop the contributing telemetry and wait for the configured TTL.
+8. Confirm Flink emits element deletes and the UI removes them.
 
 See [Monitoring](operations/monitoring.md) for commands and production signals.
 

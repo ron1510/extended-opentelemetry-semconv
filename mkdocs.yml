@@ -57,7 +57,7 @@ nav:
       - Your First Custom Entity: getting-started/custom-entity.md
   - Concepts:
       - Semantic Entity Model: concepts/semantic-model.md
-      - Interaction Lifecycle: concepts/interaction-lifecycle.md
+      - Graph Element Lifecycle: concepts/graph-element-lifecycle.md
       - Runtime Architecture: architecture.md
   - Configuration:
       - Registry Extensions: registry-extensions.md
@@ -72,7 +72,7 @@ nav:
       - Upgrades and Recovery: operations/upgrades.md
       - Troubleshooting: operations/troubleshooting.md
   - Reference:
-      - Interaction Event Schema: reference/event-schema.md
+      - Graph Element Event Schema: reference/event-schema.md
       - UI HTTP API: reference/ui-api.md
       - Helm Values: reference/helm-values.md
   - Development:

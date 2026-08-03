@@ -1,81 +1,40 @@
 # UI HTTP API
 
-The optional visualization service exposes health, graph, entity, interaction,
-and event endpoints.
+The optional UI is an indexed projection of Flink graph-element events.
 
-## Health
+## Health and status
 
-### `GET /health/live`
-
-Returns `200` when the HTTP process is running.
-
-### `GET /health/ready`
-
-Returns `200` when the Kafka consumer is running. It returns `503` with the
-consumer error when startup or consumption has failed.
-
-## Status
-
-### `GET /api/v1/status`
-
-Returns consumer status, topic, graph counts, and the most recent event time.
-
-```console
-curl http://localhost:8080/api/v1/status
-```
+- `GET /health/live` reports that the HTTP process is running.
+- `GET /health/ready` requires the Kafka consumer to be running.
+- `GET /api/v1/status` returns consumer state, topic, element/node/edge counts,
+  and the most recent event time.
 
 ## Graph
 
-### `GET /api/v1/graph`
-
-Optional query parameters:
+`GET /api/v1/graph` returns nodes, edges, total counts, and `truncated`.
 
 | Parameter | Meaning |
 | --- | --- |
 | `q` | Search node IDs, types, and attributes |
-| `entity_type` | Include one entity type |
-| `edge_type` | Include one relationship type |
+| `entity_type` | Include one node type and its connected graph |
+| `edge_type` | Include one relationship type and its endpoints |
 
-```console
-curl "http://localhost:8080/api/v1/graph?entity_type=k8s.pod"
-curl "http://localhost:8080/api/v1/graph?edge_type=runs"
-```
+Edges are retained if they arrive before their nodes but omitted from this view
+until both endpoint nodes exist.
 
-The response contains nodes, edges, total counts, and a `truncated` flag.
+## Elements
 
-## Entities
+`GET /api/v1/elements` lists authoritative stored elements.
 
-### `GET /api/v1/entities`
+| Parameter | Meaning |
+| --- | --- |
+| `q` | Search IDs and attributes |
+| `kind` | `node` or `edge` |
+| `element_type` | Exact semantic entity or relationship type |
+| `limit` | 1 to 500, default 100 |
+| `offset` | Non-negative, default 0 |
 
-Parameters:
+## Events and OpenAPI
 
-- `q`: optional search, maximum 200 characters;
-- `entity_type`: optional exact type;
-- `limit`: 1 to 500, default 100;
-- `offset`: non-negative, default 0.
-
-## Interactions
-
-### `GET /api/v1/interactions`
-
-Lists current interactions with `limit` and `offset` pagination.
-
-### `GET /api/v1/interactions/{interaction_id}`
-
-Returns one current interaction or `404` when it is absent.
-
-## Recent events
-
-### `GET /api/v1/events`
-
-Returns recent applied commands. `limit` is 1 to 1,000 and defaults to 100.
-This history is diagnostic; the current graph remains the authoritative
-projection.
-
-## OpenAPI
-
-FastAPI also exposes:
-
-- `/docs` for Swagger UI;
-- `/redoc` for ReDoc;
-- `/openapi.json` for the machine-readable schema.
+- `GET /api/v1/events` returns recently applied lifecycle events.
+- `/docs`, `/redoc`, and `/openapi.json` expose the generated API definition.

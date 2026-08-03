@@ -5,6 +5,7 @@ import random
 import time
 import urllib.request
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Final
 
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
@@ -23,15 +24,36 @@ class Edge:
 
 EDGES: Final[tuple[Edge, ...]] = (
     Edge("storefront", "catalog-api", "GET", "/products/{product_id}"),
+    Edge("storefront", "recommendations-api", "GET", "/recommendations"),
+    Edge("storefront", "search-api", "GET", "/search"),
     Edge("storefront", "identity-api", "POST", "/sessions"),
     Edge("storefront", "checkout-api", "POST", "/checkout"),
+    Edge("mobile-api", "identity-api", "POST", "/tokens"),
+    Edge("mobile-api", "catalog-api", "GET", "/products/{product_id}"),
+    Edge("mobile-api", "orders-api", "GET", "/orders/{order_id}"),
     Edge("checkout-api", "inventory-api", "POST", "/reservations"),
     Edge("checkout-api", "payments-api", "POST", "/payments"),
     Edge("checkout-api", "shipping-api", "POST", "/shipments"),
+    Edge("checkout-api", "tax-api", "POST", "/quotes"),
+    Edge("orders-api", "orders-worker", "POST", "/jobs/order-confirmation"),
     Edge("orders-worker", "inventory-api", "PATCH", "/stock/{sku}"),
+    Edge("orders-worker", "notifications-api", "POST", "/notifications"),
     Edge("payments-api", "fraud-api", "POST", "/checks"),
+    Edge("payments-api", "ledger-api", "POST", "/entries"),
     Edge("shipping-api", "notifications-api", "POST", "/notifications"),
+    Edge("shipping-api", "warehouse-api", "POST", "/pick-lists"),
     Edge("catalog-worker", "catalog-api", "PUT", "/products/{product_id}"),
+    Edge("catalog-api", "pricing-api", "GET", "/prices/{sku}"),
+    Edge("recommendations-api", "catalog-api", "GET", "/products/batch"),
+    Edge("search-api", "catalog-api", "GET", "/products/search-index"),
+    Edge("warehouse-api", "inventory-api", "PATCH", "/stock/{sku}"),
+)
+
+RUNTIMES: Final[tuple[tuple[str, str, str], ...]] = (
+    ("python", "3.12.8", "cpython"),
+    ("OpenJDK Runtime Environment", "21.0.5", "java"),
+    ("go", "1.23.4", "go"),
+    ("node", "22.12.0", "nodejs"),
 )
 
 
@@ -57,12 +79,10 @@ class Config:
                 "http://servicegraph-collector-router:4318/v1/traces",
             ),
             emit_interval_seconds=float(os.getenv("DEMO_EMIT_INTERVAL_SECONDS", "2")),
-            topology_change_interval_seconds=float(
-                os.getenv("DEMO_TOPOLOGY_CHANGE_INTERVAL_SECONDS", "20")
-            ),
-            initial_edges=int(os.getenv("DEMO_INITIAL_EDGES", "2")),
-            max_active_edges=int(os.getenv("DEMO_MAX_ACTIVE_EDGES", "6")),
-            requests_per_tick=int(os.getenv("DEMO_REQUESTS_PER_TICK", "3")),
+            topology_change_interval_seconds=float(os.getenv("DEMO_TOPOLOGY_CHANGE_INTERVAL_SECONDS", "20")),
+            initial_edges=int(os.getenv("DEMO_INITIAL_EDGES", "10")),
+            max_active_edges=int(os.getenv("DEMO_MAX_ACTIVE_EDGES", "18")),
+            requests_per_tick=int(os.getenv("DEMO_REQUESTS_PER_TICK", "8")),
             error_rate=float(os.getenv("DEMO_ERROR_RATE", "0.08")),
             namespace=os.getenv("DEMO_SERVICE_NAMESPACE", "shop"),
             instance_id=os.getenv("DEMO_INSTANCE_ID", "live-demo"),
@@ -185,14 +205,9 @@ def _add_trace(
 
 
 def _resource_spans(service: str, namespace: str, instance_id: str, span: Span) -> ResourceSpans:
+    attributes = service_resource_attributes(service, namespace, instance_id)
     return ResourceSpans(
-        resource=Resource(
-            attributes=(
-                _attribute("service.name", service),
-                _attribute("service.namespace", namespace),
-                _attribute("service.instance.id", f"{service}/{instance_id}"),
-            )
-        ),
+        resource=Resource(attributes=tuple(_attribute(key, value) for key, value in attributes)),
         scope_spans=(
             ScopeSpans(
                 scope=InstrumentationScope(name="extended-otel-servicegraph-demo", version="0.1.1"),
@@ -202,7 +217,85 @@ def _resource_spans(service: str, namespace: str, instance_id: str, span: Span) 
     )
 
 
-def _attribute(key: str, value: str) -> KeyValue:
+def service_resource_attributes(
+    service: str,
+    namespace: str,
+    instance_id: str,
+) -> tuple[tuple[str, str | int], ...]:
+    digest = sha256(service.encode("utf-8")).hexdigest()
+    node_number = int(digest[:2], 16) % 3 + 1
+    runtime_name, runtime_version, language = RUNTIMES[int(digest[2:4], 16) % len(RUNTIMES)]
+    workload_namespace = _workload_namespace(service)
+    service_version = f"{int(digest[4:6], 16) % 3 + 1}.{int(digest[6:8], 16) % 10}.0"
+    process_id = 10_000 + int(digest[8:12], 16)
+    pod_uid = f"pod-{digest[:16]}"
+
+    return (
+        ("service.name", service),
+        ("service.namespace", namespace),
+        ("service.instance.id", f"{service}/{instance_id}"),
+        ("service.version", service_version),
+        ("service.criticality", _criticality(service)),
+        ("k8s.cluster.name", "demo-production"),
+        ("k8s.cluster.uid", "cluster-demo-production"),
+        ("k8s.namespace.name", workload_namespace),
+        ("k8s.node.name", f"worker-{node_number}"),
+        ("k8s.node.uid", f"node-demo-{node_number}"),
+        ("k8s.deployment.name", service),
+        ("k8s.deployment.uid", f"deployment-{digest[:16]}"),
+        ("k8s.pod.name", f"{service}-{digest[:6]}"),
+        ("k8s.pod.uid", pod_uid),
+        ("k8s.pod.hostname", f"{service}-{digest[:6]}"),
+        ("k8s.container.name", service),
+        ("k8s.container.restart_count", int(digest[12:14], 16) % 3),
+        ("k8s.service.name", service),
+        ("k8s.service.uid", f"service-{digest[:16]}"),
+        ("k8s.service.type", "ClusterIP"),
+        ("container.runtime.name", "containerd"),
+        ("container.runtime.version", "2.0.1"),
+        ("container.runtime.description", "Kubernetes CRI runtime"),
+        ("process.pid", process_id),
+        ("process.creation.time", "2026-01-01T00:00:00Z"),
+        ("process.executable.build_id.htlhash", digest[:16]),
+        ("process.executable.name", service),
+        ("process.executable.path", f"/app/{service}"),
+        ("process.runtime.name", runtime_name),
+        ("process.runtime.version", runtime_version),
+        ("process.runtime.description", f"{language} service runtime"),
+        ("telemetry.sdk.name", "opentelemetry"),
+        ("telemetry.sdk.language", language),
+        ("telemetry.sdk.version", "1.44.0"),
+        ("telemetry.distro.name", "extended-otel-demo"),
+        ("telemetry.distro.version", "0.2.0"),
+        ("vcs.repository.name", service),
+        ("vcs.repository.url.full", f"https://github.example/platform/{service}"),
+        ("vcs.ref.head.name", "main"),
+        ("vcs.ref.head.revision", digest),
+        ("vcs.ref.type", "branch"),
+    )
+
+
+def _workload_namespace(service: str) -> str:
+    if service in {"storefront", "mobile-api", "identity-api"}:
+        return "experience"
+    if service in {"catalog-api", "catalog-worker", "pricing-api", "search-api", "recommendations-api"}:
+        return "catalog"
+    if service in {"inventory-api", "shipping-api", "warehouse-api"}:
+        return "fulfillment"
+    return "commerce"
+
+
+def _criticality(service: str) -> str:
+    if service in {"storefront", "checkout-api", "payments-api", "orders-api"}:
+        return "critical"
+    if service.endswith("-worker"):
+        return "low"
+    return "high"
+
+
+def _attribute(key: str, value: str | int) -> KeyValue:
+    if isinstance(value, int):
+        return KeyValue(key=key, value=AnyValue(int_value=value))
     return KeyValue(key=key, value=AnyValue(string_value=value))
 
 

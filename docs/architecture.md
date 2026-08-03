@@ -7,76 +7,57 @@ OTLP clients or optional live demo
   -> two Collector routers (trace-ID load balancing)
   -> two stateful Collector backends (service_graph connector)
   -> otel.servicegraph.metrics
-  -> Flink interaction diff
-  -> graph.interactions.events
+  -> Flink graph-element engine
+  -> graph.elements.events
   -> optional UI projection (SQLite)
 ```
 
-Both routers use the same fixed hash ring of two backend pod DNS names. The
-backends run as a StatefulSet behind a headless Service, so their ordinal names
-remain stable. Routing on trace ID sends every span for a trace to the same
-backend, where the service-graph connector keeps in-memory pairing state.
-Each backend converts its connector-local cumulative counters to deltas before
-Kafka. Non-zero deltas from either shard represent activity, while idle zero
-deltas do not refresh Flink expiry. Kafka separates service-graph extraction
-from interaction state.
+Both routers use the same fixed hash ring of backend pod DNS names. The
+StatefulSet ordinals keep that ring stable, and trace-ID routing sends all spans
+for a trace to one service-graph connector. Each backend converts its local
+cumulative connector counters to deltas before Kafka, so independent shards can
+contribute without overwriting one another.
 
-The Flink job runs in a dedicated standalone Session cluster. Helm owns the
+The Flink job runs in a Helm-managed standalone Session cluster. Helm owns the
 JobManager and TaskManager Deployments, REST Service, configuration, and
-initial submission Job. One JobManager uses Kubernetes high availability so a
-replacement pod recovers the submitted job from retained metadata and its
-latest checkpoint. One RWX claim stores HA metadata, checkpoints, and
-savepoints. The submitter, JobManager, and TaskManagers use the same immutable
-image.
+submission Job. Kubernetes HA metadata plus checkpoints on the shared claim let
+a replacement JobManager recover the fixed-ID job.
 
-## Collector Dimensions
+## Semantic extraction
 
-The Collector dimensions file is generated from the merged upstream and
-extension registry. Generation selects entities participating in
-`service_graph` relationships, collects their scalar attribute references, and
-excludes template attributes such as labels and annotations.
+Collector dimensions are generated from entities participating in
+`service_graph` relationships. Flink applies the same generated semantic
+registry to each datapoint, producing all supported nodes and relationships.
+High-cardinality identifiers such as pod UIDs are intentional graph identity,
+not metric labels added arbitrarily by the Flink job.
 
-This policy can include high-cardinality identifiers such as pod UIDs and
-service instance IDs. Treat narrowing as an explicit registry policy change,
-not an ad hoc Collector configuration edit.
+## Lifecycle processing
 
-The Collector pipelines keep `memory_limiter` first and batch both traces and
-service-graph metrics. Export retries use bounded in-memory queues. Collector
-traffic between the router and backend is plaintext; cluster-level network
-isolation is owned by the target platform.
+Only request and failed-request service-graph counters affect lifecycle. The
+first keyed stage maintains private interaction state derived from client,
+server, connection type, and canonical dimensions. It owns event-time and
+processing-time expiry timers and emits element contribution upserts and
+retractions. Interactions are never published.
 
-## Interaction Engine
+The second stage is keyed by graph element ID. Nodes with the same semantic ID
+and edges with the same source/type/target identity share state. Complementary
+optional attributes are merged. Conflicts choose the newest observation, with
+contributor ID as a deterministic tie-breaker. Dependency edges accumulate
+request deltas for their active lifetime.
 
-Only cumulative `traces_service_graph_request_total` and
-`traces_service_graph_request_failed_total` points affect interaction state.
-Unsupported service-graph metrics are ignored. Invalid records increment
-Flink's `rejected_records` metric and are skipped.
+The element stage publishes complete upserts when merged state changes and a
+delete when the final contributor expires. Kafka uses `element_id` as its key.
+At-least-once sink delivery is safe because events have deterministic IDs and
+projection operations are idempotent.
 
-An interaction ID is derived from the client, server, normalized connection
-type, and canonical dimensions. Metric name is excluded so request and failed
-totals update the same state.
+## Projection ownership
 
-An upsert is emitted when state is new or its payload changes. Repeated
-cumulative values emit nothing and do not refresh expiry. Counter advances,
-counter resets, and non-zero delta observations count as activity. Event-time
-and processing-time timers emit deletes for expired interactions.
+The UI stores the complete graph elements declared by Flink. It performs no
+semantic extraction, contributor merging, reference counting, expiry, or
+staleness inference. An edge may be stored before its endpoints; the graph API
+hides it until both nodes exist.
 
-Kafka records use `interaction_id` as the key. Delivery is at least once;
-deterministic event IDs and idempotent upsert/delete operations allow downstream
-deduplication.
-
-Schema 1.1 upserts include the typed entities and relationships observed for the
-interaction. The optional UI consumes these commands and materializes only the
-current state Flink declares. It has no TTL, expiry timer, or stale-data policy.
-An interaction remains visible until Flink emits its explicit delete command.
-Recent commands are retained for inspection independently of current state.
-
-## Ownership
-
-The semantic package owns interpretation and pure transitions. The Flink
-application owns Kafka, keyed state, timers, and checkpoints. The Collector
-chart owns trace routing and service-graph extraction. The demo chart owns
-optional synthetic OTLP traffic but no interaction state. The Flink chart owns
-submission, RBAC, runtime Deployments, and persistent state configuration. The UI
-chart owns the optional projection Deployment, ClusterIP Service, and SQLite
-claim; it does not own interaction lifecycle decisions.
+The semantic package owns interpretation and pure transitions. Flink owns keyed
+state, timers, checkpoints, and graph lifecycle. Collector owns trace pairing
+and service-graph metrics. Helm owns runtime resources. The optional UI owns
+only its Kafka offsets and SQLite index.

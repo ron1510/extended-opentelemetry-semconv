@@ -5,15 +5,15 @@ them from OpenTelemetry, and maintain them as a live graph.
 
 The project merges a pinned OpenTelemetry semantic-conventions registry with
 your extensions, generates typed entity models and Collector dimensions, and
-turns service-graph telemetry into an explicit interaction event stream.
+turns service-graph telemetry into authoritative node and edge lifecycle events.
 
 ```text
 OTLP traces
   -> Collector router
   -> Collector service_graph backend
   -> Kafka: otel.servicegraph.metrics
-  -> HA PyFlink interaction diff job
-  -> Kafka: graph.interactions.events
+  -> HA PyFlink graph-element job
+  -> Kafka: graph.elements.events
   -> optional SQLite projection and graph UI
 ```
 
@@ -49,7 +49,7 @@ Start with:
 - [Local quickstart](docs/getting-started/quickstart.md)
 - [Your first custom entity](docs/getting-started/custom-entity.md)
 - [Kubernetes deployment](docs/deployment-and-operations.md)
-- [Interaction event schema](docs/reference/event-schema.md)
+- [Graph element event schema](docs/reference/event-schema.md)
 
 ## Validation
 

@@ -35,15 +35,15 @@ python -m pip install ./packages/extended-opentelemetry-semconv
 
 Python 3.12 is required.
 
-## Run the live interaction pipeline
+## Run the live graph pipeline
 
 Use the complete runtime when you need a continuously maintained topology:
 
 1. Applications emit paired OpenTelemetry client/server spans.
 2. Collector routers keep all spans from a trace on one backend.
 3. Collector backends derive service-graph metrics and publish them to Kafka.
-4. Flink creates, updates, and expires interaction state.
-5. Consumers apply the resulting `upsert` and `delete` commands.
+4. Flink privately correlates observations and maintains graph-element state.
+5. Consumers apply complete element `upsert` and `delete` commands.
 
 The production deployment expects Kubernetes, Helm, Kafka-compatible brokers,
 two pre-created topics, and persistent storage for Flink. The optional UI uses

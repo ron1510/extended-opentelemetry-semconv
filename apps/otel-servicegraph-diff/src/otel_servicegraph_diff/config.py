@@ -1,4 +1,4 @@
-"""Validated settings for the PyFlink interaction diff service."""
+"""Validated settings for the PyFlink graph-element service."""
 
 from __future__ import annotations
 
@@ -58,11 +58,11 @@ class InteractionDiffConfig(BaseSettings):
         validation_alias="INTERACTION_DIFF_INPUT_TOPIC",
     )
     output_topic: TopicName = Field(
-        default="graph.interactions.events",
+        default="graph.elements.events",
         validation_alias="INTERACTION_DIFF_OUTPUT_TOPIC",
     )
     group_id: TopicName = Field(
-        default="interaction-diff-engine",
+        default="graph-element-engine",
         validation_alias="INTERACTION_DIFF_GROUP_ID",
     )
     interaction_ttl_seconds: int = Field(default=300, gt=0, validation_alias="INTERACTION_DIFF_TTL_SECONDS")

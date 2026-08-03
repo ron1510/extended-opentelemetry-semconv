@@ -32,12 +32,12 @@ streamContract:
       caKey: ca.crt
   topics:
     servicegraphMetrics: otel.servicegraph.metrics
-    interactionEvents: graph.interactions.events
+    interactionEvents: graph.elements.events
 
 job:
   fixedJobId: "00000000000000000000000000000001"
   allowNonRestoredState: false
-  groupId: interaction-diff-engine
+  groupId: graph-element-engine
   interactionTtlSeconds: 300
   allowedLatenessSeconds: 60
   stateTtlSeconds: 86400

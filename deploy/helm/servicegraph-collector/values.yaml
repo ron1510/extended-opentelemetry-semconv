@@ -36,6 +36,7 @@ backend:
     storeTtl: 10s
     storeMaxItems: 10000
     metricsFlushInterval: 5s
+    metricBatchSize: 64
   resources:
     requests:
       cpu: 250m

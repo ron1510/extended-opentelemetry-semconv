@@ -36,7 +36,7 @@ also available in the chart.
 | `application.taskManagerSlots` | `2` | Slots per TaskManager |
 | `job.fixedJobId` | `000...001` | Stable Flink job ID |
 | `job.allowNonRestoredState` | `false` | Allow reviewed upgrades to discard unmapped savepoint state |
-| `job.groupId` | `interaction-diff-engine` | Kafka source group |
+| `job.groupId` | `graph-element-engine` | Kafka source group |
 | `job.interactionTtlSeconds` | `300` | Delete inactivity threshold |
 | `job.allowedLatenessSeconds` | `60` | Watermark out-of-order bound |
 | `job.stateTtlSeconds` | `86400` | Keyed-state cleanup TTL |
@@ -61,7 +61,7 @@ consumers.
 | `image.tag` | `0.1.2` | UI tag |
 | `service.type` | `ClusterIP` | HTTP Service type |
 | `service.port` | `8080` | HTTP Service port |
-| `consumer.groupId` | `servicegraph-visualization` | Kafka group |
+| `consumer.groupId` | `servicegraph-elements-ui` | Kafka group |
 | `consumer.recentEventLimit` | `1000` | Retained event history |
 | `storage.storageClassName` | `standard` | SQLite storage class |
 | `storage.size` | `2Gi` | SQLite claim size |

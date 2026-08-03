@@ -1,1 +1,1 @@
-"""Flink-authoritative interaction graph projection."""
+"""Flink-authoritative graph-element projection."""

@@ -2,7 +2,7 @@
 
 Diagnose the pipeline in order. Start at OTLP ingress and move downstream.
 
-## No interactions appear
+## No graph elements appear
 
 Check:
 
@@ -42,7 +42,7 @@ python -m extended_otel_semconv.codegen --check
 Existing upserts do not gain new entities until new activity produces an
 updated payload.
 
-## Interactions never delete
+## Graph elements never delete
 
 Confirm:
 
@@ -55,7 +55,7 @@ Confirm:
 
 Zero delta metrics do not refresh expiry. Any non-zero delta does.
 
-## Interactions churn or repeatedly reappear
+## Graph elements churn or repeatedly reappear
 
 Likely causes:
 
@@ -65,7 +65,7 @@ Likely causes:
 - multiple traffic sources use different attributes for the same logical edge;
 - old and new Collector configurations are active simultaneously.
 
-Inspect one interaction's dimensions and metrics in the output topic. Confirm
+Inspect the input metric dimensions and corresponding element events. Confirm
 Collector backend configuration includes
 `cumulativetodelta/servicegraph`.
 
@@ -121,7 +121,7 @@ If the savepoint succeeds but the post-upgrade submitter fails, inspect both
 hook Jobs. The savepoint path is retained under `/flink-state/upgrades`; fix
 the image or state incompatibility and retry the upgrade. The next pre-upgrade
 hook can reuse `latest.savepoint` when the job is already stopped. Do not start
-a fresh job without deciding whether losing the saved interaction state is
+a fresh job without deciding whether losing the saved graph state is
 acceptable.
 
 ## Flink runtime does not recover
@@ -156,7 +156,7 @@ Compare:
 - SQLite source offsets;
 - UI consumer logs.
 
-The UI can be caught up but display old interactions if Flink has not emitted
+The UI can be caught up but display old elements if Flink has not emitted
 the expected delete. It can also lag while replaying a retained topic.
 
 ## Kafka authentication failures

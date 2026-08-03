@@ -113,7 +113,7 @@ types without custom frontend code.
 After matching traffic is observed, query the UI:
 
 ```console
-curl "http://localhost:8080/api/v1/entities?entity_type=business.capability"
+curl "http://localhost:8080/api/v1/elements?kind=node&element_type=business.capability"
 curl "http://localhost:8080/api/v1/graph?edge_type=implements"
 ```
 

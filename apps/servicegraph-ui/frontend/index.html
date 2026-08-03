@@ -20,16 +20,15 @@
           </div>
         </div>
         <div class="header-stats" aria-label="Graph totals">
-          <div><strong id="interaction-count">0</strong><span>Interactions</span></div>
-          <div><strong id="entity-count">0</strong><span>Entities</span></div>
+          <div><strong id="element-count">0</strong><span>Elements</span></div>
+          <div><strong id="node-count">0</strong><span>Nodes</span></div>
           <div><strong id="edge-count">0</strong><span>Edges</span></div>
         </div>
       </header>
 
       <nav class="view-tabs" aria-label="Views">
         <button class="tab is-active" data-view="graph">Graph</button>
-        <button class="tab" data-view="entities">Entities</button>
-        <button class="tab" data-view="interactions">Interactions</button>
+        <button class="tab" data-view="elements">Elements</button>
         <button class="tab" data-view="events">Events</button>
       </nav>
 
@@ -57,7 +56,7 @@
           </div>
           <div class="graph-workspace">
             <div id="graph-canvas"></div>
-            <div id="graph-empty" class="empty-state" hidden>No active interactions</div>
+            <div id="graph-empty" class="empty-state" hidden>No active graph elements</div>
             <aside id="inspector" class="inspector" aria-live="polite">
               <div class="inspector-header">
                 <div>
@@ -73,18 +72,14 @@
           </div>
         </section>
 
-        <section id="entities-view" class="view table-view">
+        <section id="elements-view" class="view table-view">
           <div class="toolbar">
             <label class="search-field">
               <i data-lucide="search" aria-hidden="true"></i>
-              <input id="entity-search" type="search" placeholder="Search entities" autocomplete="off" />
+              <input id="element-search" type="search" placeholder="Search elements" autocomplete="off" />
             </label>
           </div>
-          <div class="table-scroll"><table id="entities-table"></table></div>
-        </section>
-
-        <section id="interactions-view" class="view table-view">
-          <div class="table-scroll"><table id="interactions-table"></table></div>
+          <div class="table-scroll"><table id="elements-table"></table></div>
         </section>
 
         <section id="events-view" class="view table-view">

@@ -5,12 +5,22 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from time import time
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from extended_otel_semconv.entities import SemanticEntity
+from extended_otel_semconv.graph.elements import (
+    GRAPH_REQUEST_FAILED_TOTAL,
+    GRAPH_REQUEST_TOTAL,
+    GraphContribution,
+    GraphContributionRetract,
+    GraphContributionUpsert,
+    GraphEdge,
+    GraphElement,
+    GraphNode,
+    edge_id,
+)
 from extended_otel_semconv.graph.metrics import MetricPoint, MetricTemporality
 from extended_otel_semconv.graph.observation import EdgeObservation, EntityObservation, ObservedEdge, ObservedEntity
 from extended_otel_semconv.graph.runtime_registry import service_graph_relationships
@@ -20,14 +30,12 @@ from extended_otel_semconv.graph.service_graph import (
     service_graph_edge_type,
 )
 
-SCHEMA_VERSION = "1.1"
-INTERACTION_EVENT_TYPE = "interaction_state_changed"
+SCHEMA_VERSION = "2.0"
 DEFAULT_INTERACTION_TTL_SECONDS = 300
 DEFAULT_ALLOWED_LATENESS_SECONDS = 60
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 UnixNano = Annotated[int, Field(gt=0)]
-UnixMilli = Annotated[int, Field(ge=0)]
 type MetricValue = int | float
 type TelemetryScalar = str | bool | int | float
 type JsonValue = None | str | bool | int | float | list[JsonValue] | dict[str, JsonValue]
@@ -77,16 +85,6 @@ class InteractionObservation(FrozenModel):
         return self.metric.value
 
 
-class InteractionPayload(FrozenModel):
-    client: NonEmptyString
-    server: NonEmptyString
-    connection_type: NonEmptyString
-    dimensions: DimensionMap = Field(default_factory=dict)
-    metrics: dict[str, MetricValue] = Field(default_factory=dict)
-    entities: tuple[InteractionEntityRef, ...] = ()
-    graph: InteractionGraph = Field(default_factory=InteractionGraph)
-
-
 class InteractionState(FrozenModel):
     interaction_id: NonEmptyString
     client: NonEmptyString
@@ -98,44 +96,17 @@ class InteractionState(FrozenModel):
     metrics_by_name: dict[str, InteractionMetric] = Field(default_factory=dict)
     first_seen_unix_nano: UnixNano
     last_seen_unix_nano: UnixNano
-    last_payload_hash: NonEmptyString
     expires_at_unix_nano: UnixNano
     active: bool = True
-
-class InteractionEventBase(FrozenModel):
-    schema_version: Literal["1.1"] = SCHEMA_VERSION
-    event_id: NonEmptyString
-    event_type: Literal["interaction_state_changed"] = INTERACTION_EVENT_TYPE
-    interaction_id: NonEmptyString
-    observed_at_unix_nano: UnixNano
-    emitted_at_unix_ms: UnixMilli
-
-
-class InteractionUpsertEvent(InteractionEventBase):
-    operation: Literal["upsert"] = "upsert"
-    payload_hash: NonEmptyString
-    interaction: InteractionPayload
-
-
-class InteractionDeleteEvent(InteractionEventBase):
-    operation: Literal["delete"] = "delete"
-    payload_hash: None = None
-    interaction: None = None
-
-
-type InteractionEvent = Annotated[
-    InteractionUpsertEvent | InteractionDeleteEvent,
-    Field(discriminator="operation"),
-]
 
 
 class InteractionDiffResult(FrozenModel):
     state: InteractionState
-    event: InteractionEvent | None = None
+    changed: bool = False
 
 
 class InteractionDlqEvent(FrozenModel):
-    schema_version: Literal["1.1"] = SCHEMA_VERSION
+    schema_version: Literal["2.0"] = SCHEMA_VERSION
     event_type: Literal["interaction_record_rejected"] = "interaction_record_rejected"
     reason: NonEmptyString
     payload: str
@@ -216,7 +187,6 @@ def apply_observation(
     *,
     ttl_seconds: int = DEFAULT_INTERACTION_TTL_SECONDS,
     expiry_base_unix_nano: int | None = None,
-    emitted_at_unix_ms: int | None = None,
 ) -> InteractionDiffResult:
     if previous is not None and observation.observed_at_unix_nano < previous.last_seen_unix_nano:
         return InteractionDiffResult(state=previous)
@@ -230,11 +200,7 @@ def apply_observation(
     first_seen = previous.first_seen_unix_nano if previous is not None else observation.observed_at_unix_nano
     expiry_base = max(observation.observed_at_unix_nano, expiry_base_unix_nano or 0)
     state = _state_from_observation(observation, metrics, first_seen, expiry_base, ttl_seconds)
-    emitted_at = emitted_at_unix_ms if emitted_at_unix_ms is not None else int(time() * 1000)
-    return InteractionDiffResult(
-        state=state,
-        event=upsert_event(state, observation.observed_at_unix_nano, emitted_at),
-    )
+    return InteractionDiffResult(state=state, changed=True)
 
 
 def metric_has_advanced(previous: InteractionMetric | None, current: InteractionMetric) -> bool:
@@ -247,55 +213,47 @@ def metric_has_advanced(previous: InteractionMetric | None, current: Interaction
     return current.value != previous.value
 
 
-def expire_state(
-    state: InteractionState,
-    timer_unix_nano: int,
-    *,
-    emitted_at_unix_ms: int | None = None,
-) -> InteractionDeleteEvent | None:
-    if not state.active or timer_unix_nano < state.expires_at_unix_nano:
-        return None
-    emitted_at = emitted_at_unix_ms if emitted_at_unix_ms is not None else int(time() * 1000)
-    return delete_event(state, state.expires_at_unix_nano, emitted_at)
+def state_has_expired(state: InteractionState, timer_unix_nano: int) -> bool:
+    return state.active and timer_unix_nano >= state.expires_at_unix_nano
 
 
-def upsert_event(
-    state: InteractionState,
-    observed_at_unix_nano: int,
-    emitted_at_unix_ms: int,
-) -> InteractionUpsertEvent:
-    return InteractionUpsertEvent(
-        event_id=event_id("upsert", state.interaction_id, observed_at_unix_nano, state.last_payload_hash),
-        interaction_id=state.interaction_id,
-        observed_at_unix_nano=observed_at_unix_nano,
-        emitted_at_unix_ms=emitted_at_unix_ms,
-        payload_hash=state.last_payload_hash,
-        interaction=interaction_payload(state),
-    )
+def contributions_for_transition(
+    previous: InteractionState | None,
+    current: InteractionState,
+    observation: InteractionObservation,
+) -> tuple[GraphContribution, ...]:
+    previous_elements = _graph_elements(previous.graph) if previous is not None and previous.active else {}
+    current_elements = _graph_elements(current.graph)
+    contributions: list[GraphContribution] = [
+        GraphContributionRetract(
+            element_id=element_id,
+            contributor_id=current.interaction_id,
+            observed_at_unix_nano=observation.observed_at_unix_nano,
+        )
+        for element_id in sorted(previous_elements.keys() - current_elements.keys())
+    ]
+    for element_id in sorted(current_elements):
+        element, metric_deltas = current_elements[element_id]
+        contributions.append(
+            GraphContributionUpsert(
+                element_id=element_id,
+                contributor_id=current.interaction_id,
+                observed_at_unix_nano=observation.observed_at_unix_nano,
+                element=element,
+                metric_deltas=metric_deltas,
+            )
+        )
+    return tuple(contributions)
 
 
-def delete_event(
-    state: InteractionState,
-    observed_at_unix_nano: int,
-    emitted_at_unix_ms: int,
-) -> InteractionDeleteEvent:
-    return InteractionDeleteEvent(
-        event_id=event_id("delete", state.interaction_id, observed_at_unix_nano, None),
-        interaction_id=state.interaction_id,
-        observed_at_unix_nano=observed_at_unix_nano,
-        emitted_at_unix_ms=emitted_at_unix_ms,
-    )
-
-
-def interaction_payload(state: InteractionState) -> InteractionPayload:
-    return InteractionPayload(
-        client=state.client,
-        server=state.server,
-        connection_type=state.connection_type,
-        dimensions=dict(sorted(state.dimensions.items())),
-        metrics={name: metric.value for name, metric in sorted(state.metrics_by_name.items())},
-        entities=state.entities,
-        graph=state.graph,
+def retract_contributions(state: InteractionState) -> tuple[GraphContributionRetract, ...]:
+    return tuple(
+        GraphContributionRetract(
+            element_id=element_id,
+            contributor_id=state.interaction_id,
+            observed_at_unix_nano=state.expires_at_unix_nano,
+        )
+        for element_id in sorted(_graph_elements(state.graph))
     )
 
 
@@ -311,27 +269,6 @@ def build_interaction_id(
             "server": server,
             "connection_type": connection_type,
             "dimensions": canonicalize(dict(dimensions)),
-        }
-    )
-
-
-def payload_hash(state: InteractionState) -> str:
-    payload = interaction_payload(state).model_dump(mode="json")
-    return digest(payload)
-
-
-def event_id(
-    operation: Literal["upsert", "delete"],
-    interaction_id: str,
-    observed_at_unix_nano: int,
-    payload: str | None,
-) -> str:
-    return digest(
-        {
-            "operation": operation,
-            "interaction_id": interaction_id,
-            "observed_at_unix_nano": observed_at_unix_nano,
-            "payload_hash": payload,
         }
     )
 
@@ -360,7 +297,7 @@ def _state_from_observation(
         for entity in (*observation.client.entities, *observation.server.entities)
     }
     entities = tuple(entities_by_key[key] for key in sorted(entities_by_key))
-    provisional = InteractionState(
+    return InteractionState(
         interaction_id=observation.interaction_id,
         client=observation.client.service,
         server=observation.server.service,
@@ -371,11 +308,36 @@ def _state_from_observation(
         metrics_by_name=metrics_by_name,
         first_seen_unix_nano=first_seen_unix_nano,
         last_seen_unix_nano=observation.observed_at_unix_nano,
-        last_payload_hash="pending",
         expires_at_unix_nano=expiry_base_unix_nano + ttl_seconds * 1_000_000_000,
         active=True,
     )
-    return provisional.model_copy(update={"last_payload_hash": payload_hash(provisional)})
+
+
+def _graph_elements(graph: InteractionGraph) -> dict[str, tuple[GraphElement, dict[str, MetricValue]]]:
+    elements: dict[str, tuple[GraphElement, dict[str, MetricValue]]] = {
+        node.id: (GraphNode(id=node.id, type=node.type, attributes=node.attributes), {})
+        for node in graph.nodes
+    }
+    metric_names = {GRAPH_REQUEST_TOTAL, GRAPH_REQUEST_FAILED_TOTAL}
+    for observed in graph.edges:
+        element_id = edge_id(observed.source, observed.type, observed.target)
+        metric_deltas = {
+            name: value
+            for name, value in observed.attributes.items()
+            if name in metric_names and isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        attributes = {name: value for name, value in observed.attributes.items() if name not in metric_names}
+        elements[element_id] = (
+            GraphEdge(
+                id=element_id,
+                type=observed.type,
+                source_id=observed.source,
+                target_id=observed.target,
+                attributes=attributes,
+            ),
+            metric_deltas,
+        )
+    return elements
 
 
 def _entity_refs(entities: list[SemanticEntity]) -> tuple[InteractionEntityRef, ...]:

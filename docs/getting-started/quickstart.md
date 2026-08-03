@@ -33,11 +33,11 @@ The expected lifecycle is:
 1. a paired client/server trace reaches one Collector backend;
 2. a non-zero delta metric reaches Kafka;
 3. Flink emits an upsert;
-4. the UI displays the interaction and its semantic entities;
+4. the UI displays the authoritative semantic nodes and edges;
 5. the demo stops sending one edge;
 6. Flink waits for the configured inactivity TTL;
 7. Flink emits a delete;
-8. the UI removes the interaction.
+8. the UI removes elements that no longer have contributors.
 
 Use the UI's Events tab to see commands and the Flink UI on port `8081` to see
 checkpoints.

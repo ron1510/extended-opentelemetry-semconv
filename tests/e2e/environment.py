@@ -195,6 +195,8 @@ class E2EEnvironment:
             "redpanda",
             "--",
             "rpk",
+            "-X",
+            "brokers=streaming:9093",
             "topic",
             "consume",
             topic,
@@ -361,8 +363,35 @@ class E2EEnvironment:
             ],
             timeout=660,
         )
-        for topic in ("otel.servicegraph.metrics", "graph.interactions.events"):
-            self.kubectl("exec", "streaming-0", "-c", "redpanda", "--", "rpk", "topic", "create", topic)
+        self._create_topic("otel.servicegraph.metrics")
+        self._create_topic("graph.elements.events", cleanup_policy="compact")
+
+    def _create_topic(self, topic: str, *, cleanup_policy: str | None = None) -> None:
+        command = [
+            "exec",
+            "streaming-0",
+            "-c",
+            "redpanda",
+            "--",
+            "rpk",
+            "-X",
+            "brokers=streaming:9093",
+            "topic",
+            "create",
+            topic,
+        ]
+        if cleanup_policy is not None:
+            command.extend(("--config", f"cleanup.policy={cleanup_policy}"))
+        deadline = time.monotonic() + 120
+        while True:
+            result = self.kubectl(*command, check=False)
+            output = f"{result.stdout}\n{result.stderr}"
+            if result.returncode == 0 or "already exists" in output.casefold():
+                return
+            if time.monotonic() >= deadline:
+                rendered = subprocess.list2cmdline(["kubectl", *command])
+                raise RuntimeError(f"topic creation did not become ready: {rendered}\n{output}")
+            time.sleep(2)
 
     def _install_project(self) -> None:
         self.run(

@@ -1,4 +1,4 @@
-"""PyFlink 2.2.1 wiring for the servicegraph interaction diff engine."""
+"""PyFlink 2.2.1 wiring for the servicegraph graph-element engine."""
 
 # PyFlink's Python stubs erase DataStream element types and incorrectly declare
 # generator-based function overrides as returning None. Keep that unsoundness
@@ -30,11 +30,18 @@ from pyflink.datastream.functions import FlatMapFunction, KeyedProcessFunction, 
 from pyflink.datastream.state import StateTtlConfig, ValueState, ValueStateDescriptor
 from pyflink.java_gateway import get_gateway
 
+from extended_otel_semconv.graph.elements import (
+    GraphContribution,
+    GraphElementAggregateState,
+    GraphElementEvent,
+    apply_contribution,
+)
 from extended_otel_semconv.graph.interaction import (
-    InteractionEvent,
     InteractionState,
     apply_observation,
-    expire_state,
+    contributions_for_transition,
+    retract_contributions,
+    state_has_expired,
 )
 from otel_servicegraph_diff.config import InteractionDiffConfig, interaction_diff_config_from_env
 from otel_servicegraph_diff.runner import (
@@ -91,7 +98,7 @@ def run_flink_job(config: InteractionDiffConfig) -> None:
     event_sink = _kafka_sink(config, config.output_topic)
 
     _configure_job_graph(env, config, source, event_sink)
-    env.execute("servicegraph-interaction-diff")
+    env.execute("servicegraph-graph-element-engine")
 
 
 def _configure_job_graph(
@@ -103,12 +110,12 @@ def _configure_job_graph(
     payloads = (
         env.from_source(source, WatermarkStrategy.no_watermarks(), "servicegraph-otlp-json")
         .name("servicegraph-kafka-source")
-        .uid("servicegraph-kafka-source")
+        .uid("graph-v2-kafka-source")
     )
     observations = (
         payloads.flat_map(_PayloadParser())
         .name("parse-otlp-servicegraph")
-        .uid("parse-otlp-servicegraph")
+        .uid("graph-v2-parse-otlp-servicegraph")
         .assign_timestamps_and_watermarks(
             WatermarkStrategy.for_bounded_out_of_orderness(
                 Duration.of_seconds(config.allowed_lateness_seconds)
@@ -116,21 +123,27 @@ def _configure_job_graph(
             .with_idleness(Duration.of_seconds(max(config.allowed_lateness_seconds * 2, 1)))
             .with_timestamp_assigner(_ObservationTimestampAssigner())
         )
-        .name("interaction-watermarks")
-        .uid("interaction-watermarks")
+        .name("graph-element-watermarks")
+        .uid("graph-v2-watermarks")
+    )
+    contributions = (
+        observations.key_by(_interaction_key, key_type=Types.STRING())
+        .process(_InteractionContributionProcess(config.interaction_ttl_seconds, config.state_ttl_seconds))
+        .name("interaction-contributions")
+        .uid("graph-v2-interaction-contributions")
     )
     events = (
-        observations.key_by(_interaction_key, key_type=Types.STRING())
-        .process(_InteractionDiffProcess(config.interaction_ttl_seconds, config.state_ttl_seconds))
-        .name("interaction-keyed-diff")
-        .uid("interaction-keyed-diff")
+        contributions.key_by(_element_key, key_type=Types.STRING())
+        .process(_GraphElementAggregateProcess(config.state_ttl_seconds))
+        .name("graph-element-aggregation")
+        .uid("graph-v2-element-aggregation")
     )
     event_rows = (
         events.map(_event_row, output_type=OUTPUT_ROW_TYPE)
-        .name("serialize-interaction-events")
-        .uid("serialize-interaction-events")
+        .name("serialize-graph-element-events")
+        .uid("graph-v2-serialize-events")
     )
-    event_rows.sink_to(event_sink).name("interaction-events").uid("interaction-events")
+    event_rows.sink_to(event_sink).name("graph-element-events").uid("graph-v2-events-sink")
 
 
 def _kafka_source(config: InteractionDiffConfig) -> KafkaSource:
@@ -203,7 +216,7 @@ class _PayloadParser(FlatMapFunction):
         return self._rejected_records
 
 
-class _InteractionDiffProcess(KeyedProcessFunction):
+class _InteractionContributionProcess(KeyedProcessFunction):
     def __init__(self, ttl_seconds: int, state_ttl_seconds: int) -> None:
         self._ttl_seconds = ttl_seconds
         self._state_ttl_seconds = state_ttl_seconds
@@ -211,7 +224,7 @@ class _InteractionDiffProcess(KeyedProcessFunction):
         self._processing_timer: ValueState[int] | None = None
 
     def open(self, runtime_context: RuntimeContext) -> None:
-        descriptor = ValueStateDescriptor("interaction-state-v1", Types.STRING())
+        descriptor = ValueStateDescriptor("interaction-state-v2", Types.STRING())
         ttl_config = (
             StateTtlConfig.new_builder(Time.seconds(self._state_ttl_seconds))
             .update_ttl_on_create_and_write()
@@ -221,7 +234,7 @@ class _InteractionDiffProcess(KeyedProcessFunction):
         )
         descriptor.enable_time_to_live(ttl_config)
         self._state = runtime_context.get_state(descriptor)
-        processing_timer_descriptor = ValueStateDescriptor("interaction-processing-expiry-v1", Types.LONG())
+        processing_timer_descriptor = ValueStateDescriptor("interaction-processing-expiry-v2", Types.LONG())
         processing_timer_descriptor.enable_time_to_live(ttl_config)
         self._processing_timer = runtime_context.get_state(processing_timer_descriptor)
 
@@ -229,7 +242,7 @@ class _InteractionDiffProcess(KeyedProcessFunction):
         self,
         value: ParsedObservation,
         ctx: KeyedProcessFunction.Context,
-    ) -> Iterable[InteractionEvent]:
+    ) -> Iterable[GraphContribution]:
         state_handle = self._require_state()
         previous_json = state_handle.value()
         previous = InteractionState.model_validate_json(previous_json) if previous_json else None
@@ -241,10 +254,11 @@ class _InteractionDiffProcess(KeyedProcessFunction):
             ttl_seconds=self._ttl_seconds,
             expiry_base_unix_nano=watermark_nano,
         )
-        if previous == result.state:
+        if not result.changed:
             if previous is not None and not previous.active:
                 state_handle.update(previous.model_dump_json())
             return ()
+        contributions = contributions_for_transition(previous, result.state, value.observation)
         processing_timer_state = self._require_processing_timer()
         if previous is not None:
             timer_service.delete_event_time_timer(_timer_millis(previous.expires_at_unix_nano))
@@ -256,13 +270,13 @@ class _InteractionDiffProcess(KeyedProcessFunction):
         processing_expiry = timer_service.current_processing_time() + self._ttl_seconds * 1_000
         processing_timer_state.update(processing_expiry)
         timer_service.register_processing_time_timer(processing_expiry)
-        return (result.event,) if result.event is not None else ()
+        return contributions
 
     def on_timer(
         self,
         timestamp: int,
         ctx: KeyedProcessFunction.OnTimerContext,
-    ) -> Iterable[InteractionEvent]:
+    ) -> Iterable[GraphContribution]:
         state_handle = self._require_state()
         state_json = state_handle.value()
         if not state_json:
@@ -274,18 +288,18 @@ class _InteractionDiffProcess(KeyedProcessFunction):
         if time_domain is TimeDomain.PROCESSING_TIME:
             if processing_timer_state.value() != timestamp:
                 return ()
-            event = expire_state(state, state.expires_at_unix_nano)
+            expired = state_has_expired(state, state.expires_at_unix_nano)
             timer_service.delete_event_time_timer(_timer_millis(state.expires_at_unix_nano))
         else:
-            event = expire_state(state, timestamp * 1_000_000)
-        if event is None:
+            expired = state_has_expired(state, timestamp * 1_000_000)
+        if not expired:
             return ()
         processing_timer = cast(int | None, processing_timer_state.value())
         if processing_timer is not None and time_domain is TimeDomain.EVENT_TIME:
             timer_service.delete_processing_time_timer(processing_timer)
         processing_timer_state.clear()
         state_handle.update(state.model_copy(update={"active": False}).model_dump_json())
-        return (event,)
+        return retract_contributions(state)
 
     def _require_state(self) -> ValueState[str]:
         if self._state is None:
@@ -298,6 +312,45 @@ class _InteractionDiffProcess(KeyedProcessFunction):
         return self._processing_timer
 
 
+class _GraphElementAggregateProcess(KeyedProcessFunction):
+    def __init__(self, state_ttl_seconds: int) -> None:
+        self._state_ttl_seconds = state_ttl_seconds
+        self._state: ValueState[str] | None = None
+
+    def open(self, runtime_context: RuntimeContext) -> None:
+        descriptor = ValueStateDescriptor("graph-element-aggregate-state-v2", Types.STRING())
+        ttl_config = (
+            StateTtlConfig.new_builder(Time.seconds(self._state_ttl_seconds))
+            .update_ttl_on_create_and_write()
+            .never_return_expired()
+            .cleanup_full_snapshot()
+            .build()
+        )
+        descriptor.enable_time_to_live(ttl_config)
+        self._state = runtime_context.get_state(descriptor)
+
+    def process_element(
+        self,
+        value: GraphContribution,
+        ctx: KeyedProcessFunction.Context,
+    ) -> Iterable[GraphElementEvent]:
+        del ctx
+        state_handle = self._require_state()
+        previous_json = state_handle.value()
+        previous = GraphElementAggregateState.model_validate_json(previous_json) if previous_json else None
+        result = apply_contribution(previous, value)
+        if result.state is None:
+            state_handle.clear()
+        else:
+            state_handle.update(result.state.model_dump_json())
+        return (result.event,) if result.event is not None else ()
+
+    def _require_state(self) -> ValueState[str]:
+        if self._state is None:
+            raise RuntimeError("graph element state accessed before operator initialization")
+        return self._state
+
+
 class _ObservationTimestampAssigner(TimestampAssigner):
     def extract_timestamp(self, value: ParsedObservation, record_timestamp: int) -> int:
         del record_timestamp
@@ -308,8 +361,12 @@ def _interaction_key(item: ParsedObservation) -> str:
     return item.observation.interaction_id
 
 
-def _event_row(event: InteractionEvent) -> Row:
-    record = event_record(event.model_dump_json(), event.interaction_id)
+def _element_key(item: GraphContribution) -> str:
+    return item.element_id
+
+
+def _event_row(event: GraphElementEvent) -> Row:
+    record = event_record(event.model_dump_json(), event.element_id)
     return Row(record.key, record.value)
 
 

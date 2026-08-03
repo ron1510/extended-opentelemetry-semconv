@@ -19,10 +19,10 @@ streamContract:
       protocol: SASL_SSL
       existingSecret: servicegraph-kafka-auth
   topics:
-    interactionEvents: graph.interactions.events
+    interactionEvents: graph.elements.events
 
 consumer:
-  groupId: servicegraph-visualization
+  groupId: servicegraph-elements-ui
   recentEventLimit: 1000
 
 storage:

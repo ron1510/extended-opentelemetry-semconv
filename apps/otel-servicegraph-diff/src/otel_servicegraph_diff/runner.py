@@ -1,4 +1,4 @@
-"""Typed payload parsing boundary used by the Flink interaction diff job."""
+"""Typed payload parsing boundary used by the Flink graph-element job."""
 
 from __future__ import annotations
 
@@ -78,5 +78,5 @@ def iter_parsed_payloads(payload: str) -> Iterator[ParsedPayload]:
         )
 
 
-def event_record(event_json: str, interaction_id: str) -> KafkaOutputRecord:
-    return KafkaOutputRecord(key=interaction_id, value=event_json)
+def event_record(event_json: str, element_id: str) -> KafkaOutputRecord:
+    return KafkaOutputRecord(key=element_id, value=event_json)

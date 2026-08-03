@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 
 from extended_otel_semconv import AppEndpoint, entities_from_attributes
 from extended_otel_semconv.entities import SemanticEntity, quoted_entity_id
+from extended_otel_semconv.graph.elements import GRAPH_REQUEST_FAILED_TOTAL, GRAPH_REQUEST_TOTAL
 from extended_otel_semconv.graph.metrics import SERVICE_GRAPH_REQUEST_FAILED_TOTAL
 from extended_otel_semconv.graph.observation import (
     EdgeObservation,
@@ -52,7 +53,6 @@ def observations_from_service_graph_datapoint(
                 edge_type=edge_type,
                 metric_name=metric_name,
                 metric_value=value,
-                attributes=attributes,
                 observed_at_unix_nano=observed_at_unix_nano,
             )
         )
@@ -123,18 +123,13 @@ def _dependency_edge_observation(
     edge_type: str,
     metric_name: str,
     metric_value: int | float,
-    attributes: dict[str, object],
     observed_at_unix_nano: int | None,
 ) -> EdgeObservation:
-    edge_attributes = {
-        key: value
-        for key, value in attributes.items()
-        if key not in {"client", "server"}
-    }
+    edge_attributes: dict[str, object] = {}
     if metric_name == SERVICE_GRAPH_REQUEST_FAILED_TOTAL:
-        edge_attributes["service_graph.request.failed.total"] = metric_value
+        edge_attributes[GRAPH_REQUEST_FAILED_TOTAL] = metric_value
     else:
-        edge_attributes["service_graph.request.total"] = metric_value
+        edge_attributes[GRAPH_REQUEST_TOTAL] = metric_value
     return EdgeObservation(
         observation_id=_observation_id("edge", source, edge_type, target, observed_at_unix_nano, metric_name),
         observed_at_unix_nano=observed_at_unix_nano,

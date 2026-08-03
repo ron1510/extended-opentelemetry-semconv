@@ -17,7 +17,8 @@ pytest.importorskip("pyflink")
 from pyflink.datastream import RuntimeExecutionMode
 from pyflink.datastream.connectors.kafka import DeliveryGuarantee, KafkaOffsetResetStrategy
 
-from extended_otel_semconv.graph.interaction import InteractionUpsertEvent, observation_from_servicegraph_datapoint
+from extended_otel_semconv.graph.elements import GraphContributionUpsert, GraphNode, apply_contribution
+from extended_otel_semconv.graph.interaction import observation_from_servicegraph_datapoint
 from extended_otel_semconv.graph.metrics import SERVICE_GRAPH_REQUEST_TOTAL
 from otel_servicegraph_diff import flink_job
 from otel_servicegraph_diff.config import InteractionDiffConfig
@@ -74,7 +75,7 @@ def test_run_flink_job_configures_runtime_and_executes_once(monkeypatch: pytest.
     flink_job._kafka_source.assert_called_once_with(config)  # pyright: ignore[reportFunctionMemberAccess]
     flink_job._kafka_sink.assert_called_once_with(config, config.output_topic)  # pyright: ignore[reportFunctionMemberAccess]
     configure_graph.assert_called_once_with(env, config, source, sink)
-    env.execute.assert_called_once_with("servicegraph-interaction-diff")
+    env.execute.assert_called_once_with("servicegraph-graph-element-engine")
 
 
 def test_configure_job_graph_builds_named_stable_operator_chain(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -113,7 +114,11 @@ def test_configure_job_graph_builds_named_stable_operator_chain(monkeypatch: pyt
     keyed = observations.key_by.return_value
     process_operator = keyed.process.return_value
     process_named = process_operator.name.return_value
-    events = process_named.uid.return_value
+    contributions = process_named.uid.return_value
+    element_keyed = contributions.key_by.return_value
+    aggregate_operator = element_keyed.process.return_value
+    aggregate_named = aggregate_operator.name.return_value
+    events = aggregate_named.uid.return_value
     map_operator = events.map.return_value
     map_named = map_operator.name.return_value
     event_rows = map_named.uid.return_value
@@ -122,26 +127,30 @@ def test_configure_job_graph_builds_named_stable_operator_chain(monkeypatch: pyt
 
     env.from_source.assert_called_once_with(source, "no-watermarks", "servicegraph-otlp-json")
     source_operator.name.assert_called_once_with("servicegraph-kafka-source")
-    source_named.uid.assert_called_once_with("servicegraph-kafka-source")
+    source_named.uid.assert_called_once_with("graph-v2-kafka-source")
     payloads.flat_map.assert_called_once_with(ANY)
     parser_operator.name.assert_called_once_with("parse-otlp-servicegraph")
-    parser_named.uid.assert_called_once_with("parse-otlp-servicegraph")
+    parser_named.uid.assert_called_once_with("graph-v2-parse-otlp-servicegraph")
     strategy.for_bounded_out_of_orderness.assert_called_once_with("3s")
     watermark.with_idleness.assert_called_once_with("6s")
     watermark.with_timestamp_assigner.assert_called_once_with(ANY)
     parser_uid.assign_timestamps_and_watermarks.assert_called_once_with(watermark)
-    watermark_operator.name.assert_called_once_with("interaction-watermarks")
-    watermark_named.uid.assert_called_once_with("interaction-watermarks")
+    watermark_operator.name.assert_called_once_with("graph-element-watermarks")
+    watermark_named.uid.assert_called_once_with("graph-v2-watermarks")
     observations.key_by.assert_called_once_with(flink_job._interaction_key, key_type="string")
     keyed.process.assert_called_once_with(ANY)
-    process_operator.name.assert_called_once_with("interaction-keyed-diff")
-    process_named.uid.assert_called_once_with("interaction-keyed-diff")
+    process_operator.name.assert_called_once_with("interaction-contributions")
+    process_named.uid.assert_called_once_with("graph-v2-interaction-contributions")
+    contributions.key_by.assert_called_once_with(flink_job._element_key, key_type="string")
+    element_keyed.process.assert_called_once_with(ANY)
+    aggregate_operator.name.assert_called_once_with("graph-element-aggregation")
+    aggregate_named.uid.assert_called_once_with("graph-v2-element-aggregation")
     events.map.assert_called_once_with(flink_job._event_row, output_type=flink_job.OUTPUT_ROW_TYPE)
-    map_operator.name.assert_called_once_with("serialize-interaction-events")
-    map_named.uid.assert_called_once_with("serialize-interaction-events")
+    map_operator.name.assert_called_once_with("serialize-graph-element-events")
+    map_named.uid.assert_called_once_with("graph-v2-serialize-events")
     event_rows.sink_to.assert_called_once_with(sink)
-    sink_operator.name.assert_called_once_with("interaction-events")
-    sink_named.uid.assert_called_once_with("interaction-events")
+    sink_operator.name.assert_called_once_with("graph-element-events")
+    sink_named.uid.assert_called_once_with("graph-v2-events-sink")
 
 
 def test_kafka_source_maps_all_contract_properties(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -300,14 +309,14 @@ def test_process_open_registers_versioned_ttl_state(monkeypatch: pytest.MonkeyPa
     states = [object(), object()]
     runtime = MagicMock()
     runtime.get_state.side_effect = states
-    operator = flink_job._InteractionDiffProcess(ttl_seconds=5, state_ttl_seconds=60)
+    operator = flink_job._InteractionContributionProcess(ttl_seconds=5, state_ttl_seconds=60)
 
     operator.open(runtime)
 
     new_builder.assert_called_once_with("60s")
     assert [(item.name, item.value_type, item.ttl) for item in descriptors] == [
-        ("interaction-state-v1", "string", ttl),
-        ("interaction-processing-expiry-v1", "long", ttl),
+        ("interaction-state-v2", "string", ttl),
+        ("interaction-processing-expiry-v2", "long", ttl),
     ]
     assert operator._state is states[0]  # pyright: ignore[reportPrivateUsage]
     assert operator._processing_timer is states[1]  # pyright: ignore[reportPrivateUsage]
@@ -321,10 +330,17 @@ def test_small_stream_adapters_preserve_identity_and_time() -> None:
     assert flink_job._timer_millis(1_000_000_000) == 1_000
     assert flink_job._timer_millis(1_000_000_001) == 1_001
 
-    result = flink_job.apply_observation(None, parsed.observation, emitted_at_unix_ms=10)
-    assert isinstance(result.event, InteractionUpsertEvent)
+    contribution = GraphContributionUpsert(
+        element_id="service:frontend",
+        contributor_id="interaction-a",
+        observed_at_unix_nano=1_234_567_890,
+        element=GraphNode(id="service:frontend", type="service"),
+    )
+    result = apply_contribution(None, contribution, emitted_at_unix_ms=10)
+    assert result.event is not None
+    assert flink_job._element_key(contribution) == contribution.element_id
     row = flink_job._event_row(result.event)
-    assert row[0] == result.event.interaction_id
+    assert row[0] == result.event.element_id
     assert '"operation":"upsert"' in row[1]
 
 

@@ -39,11 +39,11 @@ class VisualizationConfig(BaseSettings):
         validation_alias="KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM",
     )
     topic: TopicName = Field(
-        default="graph.interactions.events",
+        default="graph.elements.events",
         validation_alias="SERVICEGRAPH_UI_INPUT_TOPIC",
     )
     group_id: TopicName = Field(
-        default="servicegraph-visualization",
+        default="servicegraph-elements-ui",
         validation_alias="SERVICEGRAPH_UI_GROUP_ID",
     )
     database_path: Path = Field(

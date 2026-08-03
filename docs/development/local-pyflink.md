@@ -21,7 +21,7 @@ Create these topics before starting the job:
 
 ```text
 otel.servicegraph.metrics
-graph.interactions.events
+graph.elements.events
 ```
 
 Auto topic creation is disabled by the application.
@@ -108,7 +108,7 @@ Set `JAVA_HOME` to Java 11 and add these environment variables:
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 KAFKA_SECURITY_PROTOCOL=PLAINTEXT
 INTERACTION_DIFF_INPUT_TOPIC=otel.servicegraph.metrics
-INTERACTION_DIFF_OUTPUT_TOPIC=graph.interactions.events
+INTERACTION_DIFF_OUTPUT_TOPIC=graph.elements.events
 INTERACTION_DIFF_GROUP_ID=interaction-diff-local
 INTERACTION_DIFF_TTL_SECONDS=30
 INTERACTION_DIFF_ALLOWED_LATENESS_SECONDS=2
@@ -149,11 +149,11 @@ Send OTLP JSON servicegraph metrics to `otel.servicegraph.metrics`. The easiest
 way to generate realistic input is to run the Collector and demo workloads, or
 to reuse a captured Collector servicegraph metric.
 
-Consume `graph.interactions.events` and verify:
+Consume `graph.elements.events` and verify complete node and edge lifecycle events.
 
-1. A new interaction produces an `upsert`.
-2. A changed metric value produces another `upsert`.
-3. No new observation for `INTERACTION_DIFF_TTL_SECONDS` produces a `delete`.
+1. New semantic nodes and edges produce complete `upsert` events.
+2. Attribute or edge-metric changes produce replacement `upsert` events.
+3. Final contributor expiry after `INTERACTION_DIFF_TTL_SECONDS` produces a `delete`.
 
 Use a new `INTERACTION_DIFF_GROUP_ID` when replaying the input topic from its
 earliest offset.
@@ -165,7 +165,7 @@ PyCharm process. Flink normally runs Python operators in a Python worker
 process, so operator breakpoints may require PyCharm subprocess attachment or
 a Python remote-debug configuration.
 
-For most interaction behavior, use the pure transition tests first. Use the
+For most graph lifecycle behavior, use the pure transition tests first. Use the
 local MiniCluster when validating Kafka serialization, Flink state, timers,
 watermarks, or checkpoint behavior.
 

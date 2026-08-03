@@ -1,6 +1,6 @@
 import cytoscape, { Core, EdgeSingular, EventObject, NodeSingular } from "cytoscape";
 import { createIcons, Maximize2, RefreshCw, Search, X } from "lucide";
-import type { EntityView, EventView, GraphEdge, GraphNode, GraphView, InteractionView, StatusView } from "./types";
+import type { EventView, GraphEdge, GraphElement, GraphNode, GraphView, StatusView } from "./types";
 import "./styles.css";
 
 const byId = <T extends HTMLElement>(id: string): T => {
@@ -11,15 +11,13 @@ const byId = <T extends HTMLElement>(id: string): T => {
 
 const state: {
   graph: GraphView;
-  entities: EntityView[];
-  interactions: InteractionView[];
+  elements: GraphElement[];
   events: EventView[];
   selectedId: string | null;
   selectedKind: "node" | "edge" | null;
 } = {
   graph: { nodes: [], edges: [], total_nodes: 0, total_edges: 0, truncated: false },
-  entities: [],
-  interactions: [],
+  elements: [],
   events: [],
   selectedId: null,
   selectedKind: null,
@@ -61,26 +59,23 @@ function wireControls(): void {
   byId<HTMLButtonElement>("fit-graph").addEventListener("click", () => cy?.fit(undefined, 48));
   byId<HTMLButtonElement>("refresh-graph").addEventListener("click", () => void refreshAll(true));
   byId<HTMLButtonElement>("close-inspector").addEventListener("click", clearSelection);
-  byId<HTMLInputElement>("entity-search").addEventListener("input", renderEntityTable);
+  byId<HTMLInputElement>("element-search").addEventListener("input", renderElementTable);
 }
 
 async function refreshAll(reposition = false): Promise<void> {
   try {
-    const [status, graph, entities, interactions, events] = await Promise.all([
+    const [status, graph, elements, events] = await Promise.all([
       getJson<StatusView>("/api/v1/status"),
       fetchGraph(),
-      getJson<EntityView[]>("/api/v1/entities?limit=500"),
-      getJson<InteractionView[]>("/api/v1/interactions?limit=500"),
+      getJson<GraphElement[]>("/api/v1/elements?limit=500"),
       getJson<EventView[]>("/api/v1/events?limit=200"),
     ]);
     state.graph = graph;
-    state.entities = entities;
-    state.interactions = interactions;
+    state.elements = elements;
     state.events = events;
     renderStatus(status);
     renderGraph(reposition || firstGraphLoad);
-    renderEntityTable();
-    renderInteractionTable();
+    renderElementTable();
     renderEventTable();
     updateFilterOptions();
     refreshInspector();
@@ -120,8 +115,8 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 function renderStatus(status: StatusView): void {
-  byId("interaction-count").textContent = formatCount(status.interactions);
-  byId("entity-count").textContent = formatCount(status.entities);
+  byId("element-count").textContent = formatCount(status.elements);
+  byId("node-count").textContent = formatCount(status.nodes);
   byId("edge-count").textContent = formatCount(status.edges);
   const dot = byId("status-dot");
   dot.classList.toggle("is-online", status.consumer_running);
@@ -143,7 +138,6 @@ function renderGraph(reposition: boolean): void {
         label: nodeLabel(node),
         entityType: node.type,
         family: entityFamily(node.type),
-        interactions: node.interaction_count,
       },
     }));
   const edgeElements = state.graph.edges.map((edge) => ({
@@ -153,7 +147,6 @@ function renderGraph(reposition: boolean): void {
         source: edge.source,
         target: edge.target,
         label: edge.type,
-        interactions: edge.interaction_count,
       },
     }));
   const elements = [...nodeElements, ...edgeElements];
@@ -204,7 +197,7 @@ function renderGraph(reposition: boolean): void {
         {
           selector: "edge",
           style: {
-            width: "mapData(interactions, 1, 10, 1.5, 5)",
+            width: 2,
             "line-color": "#9ca59f",
             "target-arrow-color": "#657169",
             "target-arrow-shape": "triangle",
@@ -301,7 +294,6 @@ function nodeInspector(node: GraphNode): string {
   return `
     ${detailRow("ID", node.id)}
     ${detailRow("Type", node.type)}
-    ${detailRow("Interactions", String(node.interaction_count))}
     <h3>Attributes</h3>
     ${objectRows(node.attributes)}
   `;
@@ -312,51 +304,41 @@ function edgeInspector(edge: GraphEdge): string {
     ${detailRow("Source", edge.source)}
     ${detailRow("Target", edge.target)}
     ${detailRow("Type", edge.type)}
-    ${detailRow("Interactions", String(edge.interaction_count))}
     <h3>Attributes</h3>
     ${objectRows(edge.attributes)}
+    <h3>Metrics</h3>
+    ${objectRows(edge.metrics)}
   `;
 }
 
-function renderEntityTable(): void {
-  const query = byId<HTMLInputElement>("entity-search").value.trim().toLowerCase();
-  const rows = state.entities.filter(
-    (entity) =>
+function renderElementTable(): void {
+  const query = byId<HTMLInputElement>("element-search").value.trim().toLowerCase();
+  const rows = state.elements.filter(
+    (element) =>
       !query ||
-      entity.id.toLowerCase().includes(query) ||
-      entity.type.toLowerCase().includes(query) ||
-      JSON.stringify(entity.attributes).toLowerCase().includes(query),
+      element.id.toLowerCase().includes(query) ||
+      element.type.toLowerCase().includes(query) ||
+      JSON.stringify(element.attributes).toLowerCase().includes(query),
   );
-  byId<HTMLTableElement>("entities-table").innerHTML = table(
-    ["Type", "Entity ID", "Interactions", "Attributes"],
-    rows.map((entity) => [
-      badge(entity.type),
-      `<code>${escapeHtml(entity.id)}</code>`,
-      String(entity.interaction_count),
-      compactObject(entity.attributes),
-    ]),
-  );
-}
-
-function renderInteractionTable(): void {
-  byId<HTMLTableElement>("interactions-table").innerHTML = table(
-    ["Client", "Relationship", "Server", "Metrics", "Observed"],
-    state.interactions.map((interaction) => [
-      escapeHtml(interaction.client),
-      badge(interaction.connection_type),
-      escapeHtml(interaction.server),
-      compactObject(interaction.metrics),
-      formatTime(interaction.emitted_at_unix_ms),
+  byId<HTMLTableElement>("elements-table").innerHTML = table(
+    ["Kind", "Type", "Element ID", "Details"],
+    rows.map((element) => [
+      badge(element.kind),
+      badge(element.type),
+      `<code>${escapeHtml(element.id)}</code>`,
+      element.kind === "node"
+        ? compactObject(element.attributes)
+        : `${escapeHtml(element.source_id)} -> ${escapeHtml(element.target_id)}`,
     ]),
   );
 }
 
 function renderEventTable(): void {
   byId<HTMLTableElement>("events-table").innerHTML = table(
-    ["Operation", "Interaction", "Schema", "Partition / offset", "Emitted"],
+    ["Operation", "Element", "Schema", "Partition / offset", "Emitted"],
     state.events.map((event) => [
       `<span class="operation operation-${event.operation}">${escapeHtml(event.operation)}</span>`,
-      `<code>${escapeHtml(shortId(event.interaction_id))}</code>`,
+      `<code>${escapeHtml(shortId(event.element_id))}</code>`,
       escapeHtml(event.schema_version),
       `${event.partition} / ${event.offset}`,
       formatTime(event.emitted_at_unix_ms),

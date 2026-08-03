@@ -67,7 +67,7 @@ helm upgrade --install streaming redpanda/redpanda `
 kubectl exec -n servicegraph-e2e streaming-0 -c redpanda -- `
   rpk topic create otel.servicegraph.metrics
 kubectl exec -n servicegraph-e2e streaming-0 -c redpanda -- `
-  rpk topic create graph.interactions.events
+  rpk topic create graph.elements.events --config cleanup.policy=compact
 ```
 
 ## Install the project
@@ -160,7 +160,7 @@ kubectl exec -n servicegraph-e2e streaming-0 -c redpanda -- `
   rpk topic consume otel.servicegraph.metrics -o end -n 1
 
 kubectl exec -n servicegraph-e2e streaming-0 -c redpanda -- `
-  rpk topic consume graph.interactions.events -o end -n 1
+  rpk topic consume graph.elements.events -o end -n 1
 ```
 
 ## Remove the environment

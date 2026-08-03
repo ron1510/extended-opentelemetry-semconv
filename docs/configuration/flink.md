@@ -24,13 +24,13 @@ Flink process-memory values.
 
 The cluster ID and fixed job ID must be unique within a namespace.
 
-## Interaction settings
+## Lifecycle settings
 
 ```yaml
 job:
   fixedJobId: "00000000000000000000000000000001"
   allowNonRestoredState: false
-  groupId: interaction-diff-engine
+  groupId: graph-element-engine
   interactionTtlSeconds: 300
   allowedLatenessSeconds: 60
   stateTtlSeconds: 86400
@@ -43,7 +43,7 @@ job:
 | --- | --- |
 | `fixedJobId` | Stable 32-hex job ID used for recovery and duplicate prevention |
 | `allowNonRestoredState` | Permit an upgrade to discard savepoint state that no longer maps to an operator |
-| `interactionTtlSeconds` | Inactivity period before Flink emits a delete |
+| `interactionTtlSeconds` | Inactivity period before an internal contributor is retracted |
 | `allowedLatenessSeconds` | Out-of-order bound used to generate watermarks |
 | `stateTtlSeconds` | Cleanup TTL for keyed Flink state |
 | `checkpointIntervalMs` | Source-offset and state checkpoint interval |
@@ -55,7 +55,8 @@ job:
 ## Kafka contract
 
 The input topic contains OTLP JSON metrics from the Collector. The output topic
-contains interaction commands:
+contains authoritative graph-element commands. The legacy values key remains
+unchanged to avoid Helm template churn:
 
 ```yaml
 streamContract:
@@ -68,7 +69,7 @@ streamContract:
       existingSecret: servicegraph-kafka-auth
   topics:
     servicegraphMetrics: otel.servicegraph.metrics
-    interactionEvents: graph.interactions.events
+    interactionEvents: graph.elements.events
 ```
 
 The source starts from committed offsets or `earliest` when the consumer group

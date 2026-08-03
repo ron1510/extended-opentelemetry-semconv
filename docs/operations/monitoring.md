@@ -90,7 +90,7 @@ source offsets share that database.
 A useful canary emits a known paired trace periodically and verifies:
 
 1. the metrics topic receives it;
-2. the interaction topic receives its upsert;
+2. the graph-element topic receives node and edge upserts;
 3. the projection exposes the expected entities;
 4. stopping the canary eventually produces a delete.
 

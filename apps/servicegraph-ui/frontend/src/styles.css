@@ -357,7 +357,6 @@ code {
   background: var(--surface);
 }
 
-#interactions-view.is-active,
 #events-view.is-active {
   grid-template-rows: minmax(0, 1fr);
 }
@@ -518,7 +517,6 @@ tbody tr:hover {
     grid-template-rows: 92px minmax(0, 1fr);
   }
 
-  #interactions-view.is-active,
   #events-view.is-active {
     grid-template-rows: minmax(0, 1fr);
   }

@@ -1,5 +1,5 @@
 # Servicegraph UI
 
-This service projects Flink interaction `upsert` and `delete` commands into a
-queryable SQLite view and serves the interaction graph UI. Flink is the only
-owner of staleness; this service never expires data based on time.
+This service projects authoritative Flink graph-element `upsert` and `delete`
+commands into SQLite and serves the graph UI. It performs no semantic
+extraction, contributor merging, or time-based expiry.
