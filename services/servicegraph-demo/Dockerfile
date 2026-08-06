@@ -5,8 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY apps/servicegraph-demo/pyproject.toml ./
-COPY apps/servicegraph-demo/src ./src
+COPY services/servicegraph-demo/pyproject.toml ./
+COPY services/servicegraph-demo/src ./src
 
 RUN pip install --no-cache-dir . \
     && groupadd --gid 10001 demo \

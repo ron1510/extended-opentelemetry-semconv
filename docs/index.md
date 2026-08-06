@@ -50,9 +50,9 @@ consumers can apply commands idempotently.
 | Component | Responsibility |
 | --- | --- |
 | `packages/extended-opentelemetry-semconv` | Registry validation, generated entities, OTLP parsing, and pure graph transitions |
-| `apps/otel-servicegraph-diff` | PyFlink Kafka source, keyed state, timers, checkpoints, and event sink |
-| `apps/servicegraph-access` | Elasticsearch initializer, lifecycle projector, and typed query API |
-| `apps/servicegraph-demo` | Optional long-running synthetic OTLP traffic |
+| `services/otel-servicegraph-diff` | PyFlink Kafka source, keyed state, timers, checkpoints, and event sink |
+| `services/servicegraph-access` | Elasticsearch initializer, lifecycle projector, and typed query API |
+| `services/servicegraph-demo` | Optional long-running synthetic OTLP traffic |
 | `deploy/helm/servicegraph-collector` | Trace router and stateful service-graph extraction |
 | `deploy/helm/servicegraph-flink` | Standalone Flink Session cluster, submission, and storage |
 | `deploy/helm/servicegraph-access` | Elasticsearch initializer, projector, and query API |

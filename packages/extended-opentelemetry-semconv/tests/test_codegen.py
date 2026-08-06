@@ -41,8 +41,8 @@ from extended_otel_semconv.registry.model import (
     RegistryDocument,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_SOURCE = ROOT / "packages" / "extended-opentelemetry-semconv" / "src" / "extended_otel_semconv"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_SOURCE = PACKAGE_ROOT / "src" / "extended_otel_semconv"
 
 
 @pytest.mark.parametrize(
@@ -79,7 +79,15 @@ def test_generated_names_are_stable() -> None:
 def test_default_paths_cover_every_generated_artifact(tmp_path: Path) -> None:
     paths = codegen.default_generation_paths(tmp_path)
 
-    assert paths.upstream_model == tmp_path / "upstream" / "otel-semconv" / "v1.43.0" / "model"
+    assert paths.upstream_model == (
+        tmp_path
+        / "packages"
+        / "extended-opentelemetry-semconv"
+        / "upstream"
+        / "otel-semconv"
+        / "v1.43.0"
+        / "model"
+    )
     assert paths.generated_dir == (
         tmp_path
         / "packages"

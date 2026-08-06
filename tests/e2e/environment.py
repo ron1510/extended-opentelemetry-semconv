@@ -294,7 +294,7 @@ class E2EEnvironment:
                 "--tag",
                 self.access_image,
                 "--file",
-                "apps/servicegraph-access/Dockerfile",
+                "services/servicegraph-access/Dockerfile",
                 *build_arguments,
                 ".",
             ],

@@ -25,7 +25,7 @@ Build the Flink runtime from the repository root:
 
 ```console
 docker build \
-  --file apps/otel-servicegraph-diff/Dockerfile \
+  --file services/otel-servicegraph-diff/Dockerfile \
   --target runtime \
   --build-arg PIP_INDEX_URL=https://pypi.internal.example/simple \
   --secret id=maven_settings,src=$HOME/.m2/settings.xml \
@@ -36,10 +36,10 @@ docker build \
 Build the access image and optional demo image:
 
 ```console
-docker build --file apps/servicegraph-access/Dockerfile \
+docker build --file services/servicegraph-access/Dockerfile \
   --tag registry.internal.example/extended-otel-servicegraph-access:0.3.0 .
 
-docker build --file apps/servicegraph-demo/Dockerfile \
+docker build --file services/servicegraph-demo/Dockerfile \
   --tag registry.internal.example/extended-otel-servicegraph-demo:0.1.1 .
 ```
 
@@ -68,7 +68,8 @@ and topic names.
 
 ## Create the credentials Secret
 
-For `SASL_SSL`, create one Secret in the target namespace containing:
+For `SASL_PLAINTEXT` or `SASL_SSL`, create one Secret in the target
+namespace containing:
 
 ```yaml
 apiVersion: v1
@@ -79,15 +80,13 @@ type: Opaque
 stringData:
   username: servicegraph
   password: replace-me
-  ca.crt: |
-    -----BEGIN CERTIFICATE-----
-    ...
-    -----END CERTIFICATE-----
 ```
 
 Use your secret-management system rather than committing this manifest.
-`PLAINTEXT` requires no Secret and is intended only for trusted development
-networks.
+`PLAINTEXT` requires no Secret. `SASL_PLAINTEXT` authenticates but does not
+encrypt credentials or traffic and must be limited to a trusted internal
+network. `SASL_SSL` uses the runtime image's default trust store; add private
+certificate authorities to that trust store when building the image.
 
 ## Prepare values
 
@@ -107,7 +106,6 @@ streamContract:
       existingSecret: servicegraph-kafka-auth
       usernameKey: username
       passwordKey: password
-      caKey: ca.crt
   topics:
     servicegraphMetrics: otel.servicegraph.metrics
 ```
@@ -133,7 +131,6 @@ streamContract:
       existingSecret: servicegraph-kafka-auth
       usernameKey: username
       passwordKey: password
-      caKey: ca.crt
   topics:
     servicegraphMetrics: otel.servicegraph.metrics
     interactionEvents: graph.elements.events

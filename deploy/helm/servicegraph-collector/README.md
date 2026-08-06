@@ -17,7 +17,7 @@ helm upgrade --install servicegraph deploy/helm/servicegraph-collector `
 ```
 
 Values must provide the internal image, Kafka brokers, topic names, and an
-existing Secret for `SASL_SSL`. The chart creates neither topics nor
+existing Secret for `SASL_PLAINTEXT` or `SASL_SSL`. The chart creates neither topics nor
 credentials. Version 0.2 fixes both replica counts at two because changing the
 backend count remaps the trace hash ring and can split in-flight trace pairs.
 

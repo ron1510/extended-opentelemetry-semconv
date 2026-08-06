@@ -10,7 +10,6 @@ import logging
 import signal
 from collections.abc import Mapping, Sequence
 from enum import StrEnum
-from pathlib import Path
 from threading import Event
 from types import FrameType
 from typing import Protocol, cast
@@ -33,6 +32,7 @@ class ProjectionError(RuntimeError):
 
 class KafkaSecurityProtocol(StrEnum):
     PLAINTEXT = "PLAINTEXT"
+    SASL_PLAINTEXT = "SASL_PLAINTEXT"
     SASL_SSL = "SASL_SSL"
 
 
@@ -42,7 +42,6 @@ class ProjectorSettings(AccessSettings):
     kafka_sasl_mechanism: str | None = None
     kafka_sasl_username: str | None = Field(default=None, min_length=1)
     kafka_sasl_password: SecretStr | None = None
-    kafka_ssl_ca_file: Path | None = None
     input_topic: str = Field(default="graph.elements.events", min_length=1, pattern=r"^[A-Za-z0-9._-]+$")
     consumer_group_id: str = Field(
         default="servicegraph-elasticsearch-projector",
@@ -56,17 +55,14 @@ class ProjectorSettings(AccessSettings):
             self.kafka_sasl_mechanism,
             self.kafka_sasl_username,
             self.kafka_sasl_password,
-            self.kafka_ssl_ca_file,
         )
-        if self.kafka_security_protocol is KafkaSecurityProtocol.SASL_SSL:
+        if self.kafka_security_protocol is not KafkaSecurityProtocol.PLAINTEXT:
             if self.kafka_sasl_mechanism != "SCRAM-SHA-256":
-                raise ValueError("SASL_SSL requires SCRAM-SHA-256")
+                raise ValueError("Kafka SASL authentication requires SCRAM-SHA-256")
             if self.kafka_sasl_username is None or self.kafka_sasl_password is None:
-                raise ValueError("Kafka username and password are required for SASL_SSL")
-            if self.kafka_ssl_ca_file is None:
-                raise ValueError("Kafka CA file is required for SASL_SSL")
+                raise ValueError("Kafka username and password are required for SASL authentication")
         elif any(value is not None for value in security_values):
-            raise ValueError("Kafka authentication and TLS fields require SASL_SSL")
+            raise ValueError("Kafka authentication fields require SASL_PLAINTEXT or SASL_SSL")
         return self
 
 
@@ -131,9 +127,8 @@ def create_consumer(settings: ProjectorSettings) -> KafkaConsumer:
             security_protocol="PLAINTEXT",
         )
     password = settings.kafka_sasl_password
-    ca_file = settings.kafka_ssl_ca_file
-    if password is None or ca_file is None:
-        raise RuntimeError("validated Kafka SASL_SSL settings are incomplete")
+    if password is None:
+        raise RuntimeError("validated Kafka SASL settings are incomplete")
     return KafkaConsumer(
         settings.input_topic,
         bootstrap_servers=settings.kafka_bootstrap_servers,
@@ -141,12 +136,10 @@ def create_consumer(settings: ProjectorSettings) -> KafkaConsumer:
         enable_auto_commit=False,
         auto_offset_reset="earliest",
         value_deserializer=None,
-        security_protocol="SASL_SSL",
+        security_protocol=settings.kafka_security_protocol.value,
         sasl_mechanism="SCRAM-SHA-256",
         sasl_plain_username=settings.kafka_sasl_username,
         sasl_plain_password=password.get_secret_value(),
-        ssl_cafile=ca_file.as_posix(),
-        ssl_check_hostname=True,
     )
 
 

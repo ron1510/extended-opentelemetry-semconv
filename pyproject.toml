@@ -1,4 +1,14 @@
-[dependency-groups]
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extended-opentelemetry-semconv-workspace"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.optional-dependencies]
 dev = [
   "hypothesis==6.158.0",
   "httpx==0.28.1",
@@ -11,6 +21,9 @@ docs = [
   "mkdocs-material==9.7.7",
 ]
 
+[tool.setuptools]
+packages = []
+
 [tool.pytest.ini_options]
 addopts = ["--strict-markers"]
 markers = [
@@ -19,15 +32,16 @@ markers = [
 ]
 pythonpath = [
   "packages/extended-opentelemetry-semconv/src",
-  "apps/otel-servicegraph-diff/src",
-  "apps/servicegraph-demo/src",
-  "apps/servicegraph-access/src",
+  "services/otel-servicegraph-diff/src",
+  "services/servicegraph-demo/src",
+  "services/servicegraph-access/src",
 ]
 testpaths = [
-  "tests",
-  "apps/otel-servicegraph-diff/tests",
-  "apps/servicegraph-demo/tests",
-  "apps/servicegraph-access/tests",
+  "packages/extended-opentelemetry-semconv/tests",
+  "services/otel-servicegraph-diff/tests",
+  "services/servicegraph-demo/tests",
+  "services/servicegraph-access/tests",
+  "tests/e2e",
 ]
 
 [tool.coverage.run]
@@ -61,21 +75,21 @@ include = [
   "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/codegen.py",
   "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/graph/interaction.py",
   "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/graph/metrics.py",
-  "apps/otel-servicegraph-diff/src",
-  "apps/otel-servicegraph-diff/tests",
-  "apps/servicegraph-demo/src",
-  "apps/servicegraph-demo/tests",
-  "apps/servicegraph-access/src",
-  "apps/servicegraph-access/tests",
-  "tests/conftest.py",
+  "services/otel-servicegraph-diff/src",
+  "services/otel-servicegraph-diff/tests",
+  "services/servicegraph-demo/src",
+  "services/servicegraph-demo/tests",
+  "services/servicegraph-access/src",
+  "services/servicegraph-access/tests",
+  "conftest.py",
   "tests/e2e",
-  "tests/test_codegen.py",
+  "packages/extended-opentelemetry-semconv/tests",
 ]
 extraPaths = [
   "packages/extended-opentelemetry-semconv/src",
-  "apps/otel-servicegraph-diff/src",
-  "apps/servicegraph-demo/src",
-  "apps/servicegraph-access/src",
+  "services/otel-servicegraph-diff/src",
+  "services/servicegraph-demo/src",
+  "services/servicegraph-access/src",
 ]
 pythonVersion = "3.12"
 venvPath = "."

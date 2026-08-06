@@ -8,15 +8,15 @@ Kind cluster. Redpanda provides Kafka only for the demonstration.
 ```powershell
 docker build `
   --tag extended-otel-flink-runtime:2.2.1-java11 `
-  --file apps/otel-servicegraph-diff/Dockerfile .
+  --file services/otel-servicegraph-diff/Dockerfile .
 
 docker build `
   --tag extended-otel-servicegraph-access:0.3.0 `
-  --file apps/servicegraph-access/Dockerfile .
+  --file services/servicegraph-access/Dockerfile .
 
 docker build `
   --tag extended-otel-servicegraph-demo:0.1.1 `
-  --file apps/servicegraph-demo/Dockerfile .
+  --file services/servicegraph-demo/Dockerfile .
 ```
 
 ## Create the cluster

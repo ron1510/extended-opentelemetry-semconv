@@ -42,12 +42,11 @@
               "type": "object",
               "required": ["protocol", "existingSecret"],
               "properties": {
-                "protocol": {"enum": ["PLAINTEXT", "SASL_SSL"]},
+                "protocol": {"enum": ["PLAINTEXT", "SASL_PLAINTEXT", "SASL_SSL"]},
                 "saslMechanism": {"const": "SCRAM-SHA-256"},
                 "existingSecret": {"type": "string"},
                 "usernameKey": {"type": "string", "minLength": 1},
-                "passwordKey": {"type": "string", "minLength": 1},
-                "caKey": {"type": "string", "minLength": 1}
+                "passwordKey": {"type": "string", "minLength": 1}
               }
             }
           }

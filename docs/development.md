@@ -7,11 +7,11 @@ packages:
 
 ```console
 python -m venv .venv
+python -m pip install -e ".[dev,docs]"
 python -m pip install -e packages/extended-opentelemetry-semconv
-python -m pip install -e apps/otel-servicegraph-diff
-python -m pip install -e apps/servicegraph-demo
-python -m pip install -e apps/servicegraph-access
-python -m pip install hypothesis pytest pytest-cov pyright ruff
+python -m pip install -e services/otel-servicegraph-diff
+python -m pip install -e services/servicegraph-demo
+python -m pip install -e services/servicegraph-access
 ```
 
 The PyFlink package is large. For package-only changes, install only the
@@ -64,7 +64,7 @@ installed directly from repository source; there is no wheel staging:
 
 ```console
 docker build \
-  --file apps/otel-servicegraph-diff/Dockerfile \
+  --file services/otel-servicegraph-diff/Dockerfile \
   --target runtime \
   --build-arg PIP_INDEX_URL=https://pypi.internal.example/simple \
   --secret id=maven_settings,src=$HOME/.m2/settings.xml \

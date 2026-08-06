@@ -167,11 +167,13 @@ idempotent.
 
 For every chart, verify:
 
-- protocol is exactly `SASL_SSL`;
+- protocol is `SASL_PLAINTEXT` or `SASL_SSL`;
 - mechanism is `SCRAM-SHA-256`;
 - the Secret exists in the same namespace;
-- selected username, password, and CA keys exist;
-- the broker certificate matches its hostname.
+- selected username and password keys exist;
+- for `SASL_SSL`, the broker certificate matches its hostname and chains to a
+  CA in the runtime image's default trust store.
 
 Do not disable endpoint identification or certificate verification to hide a
-name or CA configuration problem.
+name or trust-store configuration problem. `SASL_PLAINTEXT` is not a
+certificate workaround because it sends credentials and traffic without TLS.

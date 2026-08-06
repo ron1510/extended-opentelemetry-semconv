@@ -56,7 +56,6 @@ streamContract:
       existingSecret: servicegraph-kafka-auth
       usernameKey: username
       passwordKey: password
-      caKey: ca.crt
   topics:
     servicegraphMetrics: otel.servicegraph.metrics
 

@@ -223,7 +223,7 @@ def test_elasticsearch_auth_ca_and_retries_are_forwarded(monkeypatch: pytest.Mon
     )
 
 
-def test_kafka_plaintext_and_sasl_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_kafka_plaintext_and_sasl_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     constructor = Mock(return_value=Mock())
     monkeypatch.setattr(projector_module, "KafkaConsumer", constructor)
     create_consumer(ProjectorSettings(kafka_bootstrap_servers="streaming:9093"))
@@ -237,19 +237,28 @@ def test_kafka_plaintext_and_sasl_settings(monkeypatch: pytest.MonkeyPatch, tmp_
         security_protocol="PLAINTEXT",
     )
 
-    constructor.reset_mock()
-    ca_file = tmp_path / "kafka-ca.crt"
-    create_consumer(
-        ProjectorSettings(
-            kafka_security_protocol=KafkaSecurityProtocol.SASL_SSL,
-            kafka_sasl_mechanism="SCRAM-SHA-256",
-            kafka_sasl_username="projector",
-            kafka_sasl_password=SecretStr("secret"),
-            kafka_ssl_ca_file=ca_file,
+    for protocol in (KafkaSecurityProtocol.SASL_PLAINTEXT, KafkaSecurityProtocol.SASL_SSL):
+        constructor.reset_mock()
+        create_consumer(
+            ProjectorSettings(
+                kafka_security_protocol=protocol,
+                kafka_sasl_mechanism="SCRAM-SHA-256",
+                kafka_sasl_username="projector",
+                kafka_sasl_password=SecretStr("secret"),
+            )
         )
-    )
-    assert constructor.call_args.kwargs["sasl_plain_password"] == "secret"
-    assert constructor.call_args.kwargs["ssl_cafile"] == ca_file.as_posix()
+        constructor.assert_called_once_with(
+            "graph.elements.events",
+            bootstrap_servers="kafka:9092",
+            group_id="servicegraph-elasticsearch-projector",
+            enable_auto_commit=False,
+            auto_offset_reset="earliest",
+            value_deserializer=None,
+            security_protocol=protocol.value,
+            sasl_mechanism="SCRAM-SHA-256",
+            sasl_plain_username="projector",
+            sasl_plain_password="secret",
+        )
 
-    with pytest.raises(ValidationError, match="require SASL_SSL"):
+    with pytest.raises(ValidationError, match="require SASL_PLAINTEXT or SASL_SSL"):
         ProjectorSettings(kafka_sasl_username="invalid")

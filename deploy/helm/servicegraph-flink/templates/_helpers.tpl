@@ -48,21 +48,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
   value: {{ join "," .Values.streamContract.kafka.brokers | quote }}
 - name: KAFKA_SECURITY_PROTOCOL
   value: {{ .Values.streamContract.kafka.security.protocol | quote }}
-{{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
+{{- if ne .Values.streamContract.kafka.security.protocol "PLAINTEXT" }}
 - name: KAFKA_SASL_MECHANISM
   value: {{ .Values.streamContract.kafka.security.saslMechanism | quote }}
 - name: KAFKA_SASL_USERNAME
   valueFrom:
     secretKeyRef:
-      name: {{ required "streamContract.kafka.security.existingSecret is required for SASL_SSL" .Values.streamContract.kafka.security.existingSecret }}
+      name: {{ required "streamContract.kafka.security.existingSecret is required for Kafka SASL" .Values.streamContract.kafka.security.existingSecret }}
       key: {{ .Values.streamContract.kafka.security.usernameKey }}
 - name: KAFKA_SASL_PASSWORD
   valueFrom:
     secretKeyRef:
       name: {{ .Values.streamContract.kafka.security.existingSecret }}
       key: {{ .Values.streamContract.kafka.security.passwordKey }}
-- name: KAFKA_SSL_CA_FILE
-  value: /etc/kafka/tls/{{ .Values.streamContract.kafka.security.caKey }}
 {{- end }}
 - name: INTERACTION_DIFF_INPUT_TOPIC
   value: {{ .Values.streamContract.topics.servicegraphMetrics | quote }}
@@ -84,15 +82,4 @@ app.kubernetes.io/instance: {{ .Release.Name }}
   value: {{ .Values.job.restartAttempts | quote }}
 - name: FLINK_RESTART_DELAY_SECONDS
   value: {{ .Values.job.restartDelaySeconds | quote }}
-{{- end -}}
-
-{{- define "servicegraph-flink.kafkaTlsVolume" -}}
-{{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
-- name: kafka-tls
-  secret:
-    secretName: {{ required "streamContract.kafka.security.existingSecret is required for SASL_SSL" .Values.streamContract.kafka.security.existingSecret }}
-    items:
-      - key: {{ .Values.streamContract.kafka.security.caKey }}
-        path: {{ .Values.streamContract.kafka.security.caKey }}
-{{- end }}
 {{- end -}}

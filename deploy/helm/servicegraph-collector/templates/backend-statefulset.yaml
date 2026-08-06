@@ -41,12 +41,12 @@ spec:
           image: {{ include "servicegraph-collector.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["--config=/etc/otelcol/config.yaml"]
-          {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
+          {{- if ne .Values.streamContract.kafka.security.protocol "PLAINTEXT" }}
           env:
             - name: KAFKA_SASL_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.streamContract.kafka.security.existingSecret }}
+                  name: {{ required "streamContract.kafka.security.existingSecret is required for Kafka SASL" .Values.streamContract.kafka.security.existingSecret }}
                   key: {{ .Values.streamContract.kafka.security.usernameKey }}
             - name: KAFKA_SASL_PASSWORD
               valueFrom:
@@ -83,11 +83,6 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
-            {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
-            - name: kafka-tls
-              mountPath: /etc/kafka/tls
-              readOnly: true
-            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -95,14 +90,6 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 256Mi
-        {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
-        - name: kafka-tls
-          secret:
-            secretName: {{ required "streamContract.kafka.security.existingSecret is required for SASL_SSL" .Values.streamContract.kafka.security.existingSecret }}
-            items:
-              - key: {{ .Values.streamContract.kafka.security.caKey }}
-                path: {{ .Values.streamContract.kafka.security.caKey }}
-        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

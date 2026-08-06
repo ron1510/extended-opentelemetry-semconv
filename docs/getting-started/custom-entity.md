@@ -5,7 +5,8 @@ it with an `implements` relationship.
 
 ## 1. Define an attribute
 
-Create `model/extensions/business/registry.yaml`:
+Create
+`packages/extended-opentelemetry-semconv/model/extensions/business/registry.yaml`:
 
 ```yaml
 groups:
@@ -23,7 +24,8 @@ registry.
 
 ## 2. Define the entity
 
-Create `model/extensions/business/entities.yaml`:
+Create
+`packages/extended-opentelemetry-semconv/model/extensions/business/entities.yaml`:
 
 ```yaml
 groups:
@@ -44,7 +46,8 @@ created.
 
 ## 3. Define the relationship
 
-Create `model/extensions/business/relationships.yaml`:
+Create
+`packages/extended-opentelemetry-semconv/model/extensions/business/relationships.yaml`:
 
 ```yaml
 groups:

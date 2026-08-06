@@ -76,7 +76,6 @@ streamContract:
       existingSecret: servicegraph-kafka-auth
       usernameKey: username
       passwordKey: password
-      caKey: ca.crt
   topics:
     servicegraphMetrics: otel.servicegraph.metrics
 ```
@@ -89,11 +88,14 @@ from Flink's interaction TTL.
 Supported modes are:
 
 - `PLAINTEXT` for a trusted local environment;
+- `SASL_PLAINTEXT` with `SCRAM-SHA-256` for authentication without
+  encryption on a trusted internal network;
 - `SASL_SSL` with `SCRAM-SHA-256`.
 
 The named Secret must already exist in the release namespace. It contains the
-username, password, and CA certificate keys selected in values. The chart
-does not create credentials or Kafka topics.
+username and password keys selected in values. `SASL_SSL` validates broker
+certificates through the Collector image's default trust store. The chart does
+not mount a Kafka CA file, create credentials, or create Kafka topics.
 
 ## Reliability and limits
 

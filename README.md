@@ -22,9 +22,9 @@ The repository contains:
 
 - `packages/extended-opentelemetry-semconv`: registry loading, generated
   Pydantic entities, OTLP parsing, and pure graph transitions.
-- `apps/otel-servicegraph-diff`: validated settings and PyFlink wiring.
-- `apps/servicegraph-demo`: optional live synthetic OTLP traffic.
-- `apps/servicegraph-access`: Elasticsearch initialization, Kafka projection,
+- `services/otel-servicegraph-diff`: validated settings and PyFlink wiring.
+- `services/servicegraph-demo`: optional live synthetic OTLP traffic.
+- `services/servicegraph-access`: Elasticsearch initialization, Kafka projection,
   and typed query API.
 - `deploy/helm/servicegraph-collector`: the trace router and service-graph
   backend.
@@ -42,7 +42,7 @@ The MkDocs site covers the semantic model, custom entities, configuration,
 deployment, operations, event contracts, and development.
 
 ```powershell
-python -m pip install mkdocs-material==9.7.7
+python -m pip install -e ".[docs]"
 python -m mkdocs serve
 ```
 

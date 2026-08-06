@@ -7,8 +7,6 @@ from pathlib import Path
 
 SEMANTIC_PACKAGE = (
     Path(__file__).resolve().parents[1]
-    / "packages"
-    / "extended-opentelemetry-semconv"
     / "src"
     / "extended_otel_semconv"
 )

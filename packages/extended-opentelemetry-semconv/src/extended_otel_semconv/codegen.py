@@ -24,7 +24,7 @@ from extended_otel_semconv.registry.model import (
 )
 from extended_otel_semconv.registry.validation import load_model_registry, validate_extension_model
 
-ROOT = Path(__file__).resolve().parents[4]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 ELASTICSEARCH_MAPPING_SCHEMA_VERSION = "1"
 
 
@@ -47,12 +47,13 @@ class GeneratedEntity(NamedTuple):
     identifying_refs: tuple[EntityAttributeRef, ...]
 
 
-def default_generation_paths(root: Path = ROOT) -> GenerationPaths:
-    package = root / "packages" / "extended-opentelemetry-semconv" / "src" / "extended_otel_semconv"
+def default_generation_paths(root: Path = REPOSITORY_ROOT) -> GenerationPaths:
+    package_root = root / "packages" / "extended-opentelemetry-semconv"
+    package = package_root / "src" / "extended_otel_semconv"
     return GenerationPaths(
-        upstream_model=root / "upstream" / "otel-semconv" / "v1.43.0" / "model",
-        extension_model=root / "model" / "extensions",
-        upstream_lock=root / "upstream" / "otel-semconv.lock.json",
+        upstream_model=package_root / "upstream" / "otel-semconv" / "v1.43.0" / "model",
+        extension_model=package_root / "model" / "extensions",
+        upstream_lock=package_root / "upstream" / "otel-semconv.lock.json",
         generated_dir=package / "generated",
         package_lock=package / "metadata" / "otel-semconv.lock.json",
         relationship_metadata=package / "metadata" / "service-graph-relationships.json",

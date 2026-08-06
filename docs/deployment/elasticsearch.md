@@ -28,7 +28,7 @@ records its schema version, registry-lock digest, and deterministic mapping hash
 Build from the repository root and publish the image to the registry reachable by your cluster:
 
 ```console
-docker build --file apps/servicegraph-access/Dockerfile \
+docker build --file services/servicegraph-access/Dockerfile \
   --build-arg PIP_INDEX_URL=https://pypi.internal.example/simple \
   --tag registry.internal.example/extended-otel-servicegraph-access:0.3.0 .
 ```
@@ -107,7 +107,6 @@ streamContract:
       existingSecret: servicegraph-kafka-auth
       usernameKey: username
       passwordKey: password
-      caKey: ca.crt
   topics:
     interactionEvents: graph.elements.events
 

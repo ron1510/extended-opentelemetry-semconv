@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
@@ -269,10 +269,13 @@ def _example_attribute_value(attribute: AttributeDefinition) -> object:
     if attribute_type == "boolean":
         return True
     if isinstance(attribute_type, dict):
-        members = attribute_type.get("members")
+        attribute_type_mapping = cast(dict[str, object], attribute_type)
+        members = attribute_type_mapping.get("members")
         if isinstance(members, list) and members:
-            first_member = members[0]
-            if isinstance(first_member, dict) and isinstance(first_member.get("id"), str):
-                return first_member["id"]
+            first_member = cast(list[object], members)[0]
+            if isinstance(first_member, dict):
+                member = cast(dict[str, object], first_member)
+                if isinstance(member.get("id"), str):
+                    return member["id"]
         return {"value": attribute.id}
     return f"{attribute.id}-value"

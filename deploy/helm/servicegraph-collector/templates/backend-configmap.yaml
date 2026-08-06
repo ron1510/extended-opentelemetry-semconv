@@ -55,7 +55,8 @@ data:
         tls:
           insecure: false
           insecure_skip_verify: false
-          ca_file: /etc/kafka/tls/{{ .Values.streamContract.kafka.security.caKey }}
+        {{- end }}
+        {{- if ne .Values.streamContract.kafka.security.protocol "PLAINTEXT" }}
         auth:
           sasl:
             username: ${env:KAFKA_SASL_USERNAME}

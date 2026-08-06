@@ -13,10 +13,10 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /build
 COPY packages/extended-opentelemetry-semconv ./packages/extended-opentelemetry-semconv
-COPY apps/servicegraph-access ./apps/servicegraph-access
+COPY services/servicegraph-access ./services/servicegraph-access
 RUN --mount=type=cache,target=/tmp/pip-cache \
     PIP_CACHE_DIR=/tmp/pip-cache python -m pip install \
-      ./apps/servicegraph-access \
+      ./services/servicegraph-access \
       ./packages/extended-opentelemetry-semconv
 
 RUN groupadd --gid 10001 servicegraph \

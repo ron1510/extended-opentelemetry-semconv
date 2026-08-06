@@ -160,11 +160,6 @@ spec:
               mountPath: /opt/flink/log
             - name: tmp
               mountPath: /tmp
-            {{- if eq .Values.streamContract.kafka.security.protocol "SASL_SSL" }}
-            - name: kafka-tls
-              mountPath: /etc/kafka/tls
-              readOnly: true
-            {{- end }}
       volumes:
         - name: flink-state
           persistentVolumeClaim:
@@ -175,4 +170,3 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}
-        {{- include "servicegraph-flink.kafkaTlsVolume" . | nindent 8 }}

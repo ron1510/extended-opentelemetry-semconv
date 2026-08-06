@@ -8,8 +8,9 @@ relationships.
 The effective registry is a merge of:
 
 1. the pinned OpenTelemetry semantic-conventions model under
-   `upstream/otel-semconv/v1.43.0/model`;
-2. project extensions under `model/extensions`.
+   `packages/extended-opentelemetry-semconv/upstream/otel-semconv/v1.43.0/model`;
+2. project extensions under
+   `packages/extended-opentelemetry-semconv/model/extensions`.
 
 Extensions may reference upstream attributes and entities, but may not redefine
 them. The upstream snapshot is build input and is never downloaded at runtime.

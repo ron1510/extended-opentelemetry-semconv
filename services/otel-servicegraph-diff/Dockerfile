@@ -7,8 +7,8 @@ ARG FLINK_BASE_IMAGE=flink:2.2.1-scala_2.12-java11
 FROM ${MAVEN_BASE_IMAGE} AS java-runtime
 
 WORKDIR /build
-COPY apps/otel-servicegraph-diff/runtime/java/pom.xml ./pom.xml
-COPY apps/otel-servicegraph-diff/runtime/java/src ./src
+COPY services/otel-servicegraph-diff/runtime/java/pom.xml ./pom.xml
+COPY services/otel-servicegraph-diff/runtime/java/src ./src
 RUN --mount=type=secret,id=maven_settings,required=false \
     if [ -f /run/secrets/maven_settings ]; then \
       mvn --batch-mode --no-transfer-progress --settings /run/secrets/maven_settings package; \
@@ -25,10 +25,10 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 
 COPY packages/extended-opentelemetry-semconv ./packages/extended-opentelemetry-semconv
-COPY apps/otel-servicegraph-diff ./apps/otel-servicegraph-diff
+COPY services/otel-servicegraph-diff ./services/otel-servicegraph-diff
 RUN --mount=type=cache,target=/tmp/pip-cache \
     PIP_CACHE_DIR=/tmp/pip-cache python -m pip install \
-      ./apps/otel-servicegraph-diff \
+      ./services/otel-servicegraph-diff \
       ./packages/extended-opentelemetry-semconv
 
 FROM ${PYTHON_BASE_IMAGE} AS runtime-layout
@@ -45,7 +45,7 @@ FROM ${FLINK_BASE_IMAGE} AS runtime-base
 COPY --from=python-build --chown=flink:0 /usr/local /usr/local
 COPY --from=runtime-layout --chown=flink:0 /layout/ /
 COPY --chown=flink:0 packages/extended-opentelemetry-semconv/src/extended_otel_semconv /opt/application/extended_otel_semconv
-COPY --chown=flink:0 apps/otel-servicegraph-diff/src/otel_servicegraph_diff /opt/application/otel_servicegraph_diff
+COPY --chown=flink:0 services/otel-servicegraph-diff/src/otel_servicegraph_diff /opt/application/otel_servicegraph_diff
 COPY --from=java-runtime --chown=flink:0 --chmod=0440 \
   /build/target/interaction-serializer.jar \
   /opt/flink/lib/interaction-serializer.jar

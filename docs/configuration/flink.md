@@ -76,6 +76,12 @@ The source starts from committed offsets or `earliest` when the consumer group
 has no offsets. Auto topic creation is disabled. The output sink is
 at-least-once.
 
+Supported protocols are `PLAINTEXT`, `SASL_PLAINTEXT`, and `SASL_SSL`.
+Both SASL modes use the configured SCRAM credentials. `SASL_SSL` validates
+broker certificates with the Flink image's default JVM trust store; no Kafka CA
+file is mounted by the chart. `SASL_PLAINTEXT` sends credentials and records
+without TLS and is appropriate only on a trusted internal network.
+
 ## Persistent state
 
 The default chart uses one shared claim for:

@@ -17,8 +17,8 @@ the executable defaults.
 | `backend.serviceGraph.storeMaxItems` | `10000` | Pairing-store limit |
 | `backend.serviceGraph.metricsFlushInterval` | `5s` | Metric flush period |
 | `streamContract.kafka.brokers` | example broker | Kafka bootstrap servers |
-| `streamContract.kafka.security.protocol` | `SASL_SSL` | `PLAINTEXT` or `SASL_SSL` |
-| `streamContract.kafka.security.existingSecret` | `servicegraph-kafka-auth` | Existing credentials and CA |
+| `streamContract.kafka.security.protocol` | `SASL_SSL` | `PLAINTEXT`, `SASL_PLAINTEXT`, or `SASL_SSL` |
+| `streamContract.kafka.security.existingSecret` | `servicegraph-kafka-auth` | Existing SASL credentials |
 | `streamContract.topics.servicegraphMetrics` | `otel.servicegraph.metrics` | Metrics topic |
 
 Resource, scheduling, ServiceAccount, image-pull, and security-context values are

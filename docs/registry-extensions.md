@@ -5,11 +5,12 @@ customization mechanism for the project.
 
 ## Layout
 
-Place YAML files anywhere below `model/extensions`. Files are loaded
+Place YAML files anywhere below
+`packages/extended-opentelemetry-semconv/model/extensions`. Files are loaded
 recursively in sorted order. Organize them by domain:
 
 ```text
-model/extensions/
+packages/extended-opentelemetry-semconv/model/extensions/
   app/
     entities.yaml
   business/
@@ -175,12 +176,13 @@ regeneration and deployment without application-specific visualization code.
 
 ## Upgrade the upstream snapshot
 
-The project vendors one exact OpenTelemetry model and records its source in
-`upstream/otel-semconv.lock.json`.
+The package vendors one exact OpenTelemetry model and records its source in
+`packages/extended-opentelemetry-semconv/upstream/otel-semconv.lock.json`.
 
 1. Select an exact semantic-conventions release tag.
 2. Extract only its `model` directory into a new versioned directory.
-3. Update `upstream/otel-semconv.lock.json`.
+3. Update
+   `packages/extended-opentelemetry-semconv/upstream/otel-semconv.lock.json`.
 4. Update `UPSTREAM_MODEL` in both generators and related tests.
 5. Delete extensions that the new upstream version now owns.
 6. Regenerate all artifacts.

@@ -8,8 +8,8 @@ from pathlib import Path
 from extended_otel_semconv import AppEndpoint, K8sPod, Service
 from extended_otel_semconv.generated import __all__ as generated_exports
 
-ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_SOURCE = ROOT / "packages" / "extended-opentelemetry-semconv" / "src"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_SOURCE = PACKAGE_ROOT / "src"
 
 
 def test_generated_public_api_includes_upstream_and_extension_entities() -> None:

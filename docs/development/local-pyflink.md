@@ -40,7 +40,7 @@ py -3.12 -m venv .venv312
 
 .\.venv312\Scripts\python.exe -m pip install `
   -e packages\extended-opentelemetry-semconv `
-  -e apps\otel-servicegraph-diff
+  -e services\otel-servicegraph-diff
 ```
 
 On Linux or macOS:
@@ -50,7 +50,7 @@ python3.12 -m venv .venv312
 
 ./.venv312/bin/python -m pip install \
   -e packages/extended-opentelemetry-semconv \
-  -e apps/otel-servicegraph-diff
+  -e services/otel-servicegraph-diff
 ```
 
 Editable installs make source changes immediately available to the local job.
@@ -61,7 +61,7 @@ The job uses a Java serializer and the Flink Kafka connector. Build both from
 the checked-in Maven project:
 
 ```powershell
-mvn -f apps\otel-servicegraph-diff\runtime\java\pom.xml package
+mvn -f services\otel-servicegraph-diff\runtime\java\pom.xml package
 ```
 
 Locate the Flink library directory inside the virtual environment:
@@ -77,11 +77,11 @@ Copy both runtime JARs into that directory:
 
 ```powershell
 Copy-Item `
-  apps\otel-servicegraph-diff\runtime\java\target\interaction-serializer.jar `
+  services\otel-servicegraph-diff\runtime\java\target\interaction-serializer.jar `
   -Destination $flinkLib
 
 Copy-Item `
-  apps\otel-servicegraph-diff\runtime\java\target\runtime\flink-sql-connector-kafka-5.0.0-2.2.jar `
+  services\otel-servicegraph-diff\runtime\java\target\runtime\flink-sql-connector-kafka-5.0.0-2.2.jar `
   -Destination $flinkLib
 ```
 

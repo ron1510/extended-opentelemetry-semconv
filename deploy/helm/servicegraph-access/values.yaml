@@ -31,7 +31,6 @@ streamContract:
       existingSecret: servicegraph-kafka-auth
       usernameKey: username
       passwordKey: password
-      caKey: ca.crt
   topics:
     interactionEvents: graph.elements.events
 
