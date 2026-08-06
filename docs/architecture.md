@@ -9,7 +9,8 @@ OTLP clients or optional live demo
   -> otel.servicegraph.metrics
   -> Flink graph-element engine
   -> graph.elements.events
-  -> optional UI projection (SQLite)
+  -> Elasticsearch current-state projection
+  -> typed query API or Kibana
 ```
 
 Both routers use the same fixed hash ring of backend pod DNS names. The
@@ -50,14 +51,20 @@ delete when the final contributor expires. Kafka uses `element_id` as its key.
 At-least-once sink delivery is safe because events have deterministic IDs and
 projection operations are idempotent.
 
-## Projection ownership
+## Projection and access
 
-The UI stores the complete graph elements declared by Flink. It performs no
-semantic extraction, contributor merging, reference counting, expiry, or
-staleness inference. An edge may be stored before its endpoints; the graph API
-hides it until both nodes exist.
+The projector applies the complete graph elements declared by Flink to a strict
+Elasticsearch index. Upserts replace the document under the deterministic
+element ID and deletes remove it. The projector performs no semantic
+extraction, contributor merging, reference counting, expiry, or staleness
+inference.
+
+The stateless query API validates recursive patterns against the generated
+mapping and translates them to Elasticsearch queries. Kibana can inspect the
+same current-state index directly in development and operational environments.
 
 The semantic package owns interpretation and pure transitions. Flink owns keyed
 state, timers, checkpoints, and graph lifecycle. Collector owns trace pairing
-and service-graph metrics. Helm owns runtime resources. The optional UI owns
-only its Kafka offsets and SQLite index.
+and service-graph metrics. The access projector owns Kafka offsets and the
+Elasticsearch projection. The query API owns only typed query translation.
+Helm owns runtime resources.

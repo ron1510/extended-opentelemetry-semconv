@@ -1,275 +1,198 @@
 from __future__ import annotations
 
-import json
-import random
 import time
-import urllib.request
-from typing import cast
 
 import pytest
-from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
-from opentelemetry.proto.common.v1.common_pb2 import AnyValue, InstrumentationScope, KeyValue
-from opentelemetry.proto.resource.v1.resource_pb2 import Resource
-from opentelemetry.proto.trace.v1.trace_pb2 import ResourceSpans, ScopeSpans, Span, Status
 
 from tests.e2e.environment import E2EEnvironment, JsonValue, wait_for
 
-ROUTE_A = "/checkout/{cart_id}"
-ROUTE_B = "/checkout/{cart_id}/confirm"
-ENDPOINT_A = "app.endpoint:checkout-api:payments:POST:%2Fcheckout%2F%7Bcart_id%7D"
-ENDPOINT_B = "app.endpoint:checkout-api:payments:POST:%2Fcheckout%2F%7Bcart_id%7D%2Fconfirm"
-FIXED_JOB_ID = "00000000000000000000000000000001"
-
 
 @pytest.mark.e2e
-def test_telemetry_becomes_shared_elements_then_expires_by_contributor(
+def test_flink_events_are_projected_as_current_elasticsearch_state(
     e2e_environment: E2EEnvironment,
 ) -> None:
-    collector_url = e2e_environment.start_port_forward("service/servicegraph-collector-router", 4318)
-    ui_url = e2e_environment.start_port_forward("service/servicegraph-ui", 8080)
-    flink_url = e2e_environment.start_port_forward("service/servicegraph-diff-rest", 8081)
-
-    for seed in range(3):
-        _send_trace(f"{collector_url}/v1/traces", seed, ROUTE_A, {"service.version": "2.4"})
-        _send_trace(f"{collector_url}/v1/traces", seed + 10, ROUTE_B, {"service.criticality": "tier-1"})
-
-    wait_for(
-        "both route metrics in Kafka",
-        180,
-        lambda: _both_metrics(e2e_environment.kafka_records("otel.servicegraph.metrics")),
+    api_url = e2e_environment.start_api_port_forward()
+    observed_at = time.time_ns()
+    service_id = "service:checkout-api"
+    edge_id = "edge:storefront-calls-checkout"
+    service = _upsert(
+        service_id,
+        {
+            "id": service_id,
+            "kind": "node",
+            "type": "service",
+            "attributes": {"service.name": "checkout-api", "service.version": "2.4"},
+        },
+        observed_at,
+        "service-v1",
     )
-    checkout = wait_for(
-        "merged checkout service element",
-        180,
-        lambda: _node_upsert_with_attributes(
-            e2e_environment,
-            "service:checkout-api",
-            {"service.version": "2.4", "service.criticality": "tier-1"},
-        ),
+    edge = _upsert(
+        edge_id,
+        {
+            "id": edge_id,
+            "kind": "edge",
+            "type": "calls",
+            "source_id": "service:storefront",
+            "target_id": service_id,
+            "attributes": {},
+            "metrics": {
+                "service_graph.request.total": 12.0,
+                "service_graph.request.failed.total": 1.0,
+            },
+        },
+        observed_at,
+        "edge-v1",
     )
-    assert checkout[0] == "service:checkout-api"
-    dependency = wait_for(
-        "shared dependency edge",
-        180,
-        lambda: _dependency_upsert(e2e_environment),
-    )
-    assert dependency[0] == _object(dependency[1]["element"])["id"]
+    e2e_environment.produce_events((service, edge))
 
-    jobs = _array(_object(e2e_environment.get_json(f"{flink_url}/jobs/overview"))["jobs"])
-    assert any(
-        isinstance(job, dict) and job.get("jid") == FIXED_JOB_ID and job.get("state") == "RUNNING"
-        for job in jobs
-    )
-
-    elements = wait_for(
-        "projected graph elements",
+    initial = wait_for(
+        "node and edge documents",
         60,
-        lambda: _expected_elements(e2e_environment.get_json(f"{ui_url}/api/v1/elements?limit=500")),
+        lambda: _documents_by_id(e2e_environment, {service_id, edge_id}),
     )
-    element_ids = {str(_object(element)["id"]) for element in elements}
-    assert {"service:storefront", "service:checkout-api", ENDPOINT_A, ENDPOINT_B} <= element_ids
-    _assert_expected_edges(e2e_environment.get_json(f"{ui_url}/api/v1/graph"))
-
-    deadline = time.monotonic() + 30
-    seed = 100
-    while time.monotonic() < deadline:
-        _send_trace(f"{collector_url}/v1/traces", seed, ROUTE_B, {"service.criticality": "tier-1"})
-        seed += 1
-        time.sleep(3)
-
-    remaining = wait_for(
-        "route A expires while shared elements remain",
-        90,
-        lambda: _partial_projection(e2e_environment.get_json(f"{ui_url}/api/v1/elements?limit=500")),
+    assert initial[service_id]["attributes"] == {
+        "service.name": "checkout-api",
+        "service.version": "2.4",
+    }
+    assert initial[edge_id]["source_id"] == "service:storefront"
+    assert initial[edge_id]["metrics"] == {
+        "service_graph.request.total": 12.0,
+        "service_graph.request.failed.total": 1.0,
+    }
+    queried = e2e_environment.post_json(
+        f"{api_url}/api/v1/elements/search",
+        {
+            "pattern": {
+                "op": "and",
+                "operands": [
+                    {
+                        "op": "or",
+                        "operands": [
+                            {"op": "regex", "field": "attributes.service.name", "pattern": "checkout-.*"},
+                            {"op": "eq", "field": "type", "value": "calls"},
+                        ],
+                    },
+                    {"op": "exists", "field": "id"},
+                ],
+            }
+        },
     )
-    remaining_by_id = {str(_object(item)["id"]): _object(item) for item in remaining}
-    assert ENDPOINT_A not in remaining_by_id
-    assert ENDPOINT_B in remaining_by_id
-    checkout_attributes = _object(remaining_by_id["service:checkout-api"]["attributes"])
-    assert checkout_attributes.get("service.criticality") == "tier-1"
-    assert "service.version" not in checkout_attributes
-    _assert_expected_edges(e2e_environment.get_json(f"{ui_url}/api/v1/graph"))
+    assert queried["total"] == 2
+    assert {str(element["id"]) for element in _elements(queried)} == {service_id, edge_id}
 
-    wait_for(
-        "final contributor expiry removes the projection",
-        120,
-        lambda: _projection_is_empty(e2e_environment.get_json(f"{ui_url}/api/v1/status")),
+    updated_service = _upsert(
+        service_id,
+        {
+            "id": service_id,
+            "kind": "node",
+            "type": "service",
+            "attributes": {
+                "service.name": "checkout-api",
+                "service.version": "2.4",
+                "service.criticality": "tier-1",
+            },
+        },
+        observed_at + 1,
+        "service-v2",
     )
-    assert _element_event(e2e_environment, "delete", "service:checkout-api") is not None
-
-
-def _send_trace(endpoint: str, seed: int, route: str, server_attributes: dict[str, str]) -> None:
-    request = _trace_request(seed, route, server_attributes)
-    http_request = urllib.request.Request(
-        endpoint,
-        data=request.SerializeToString(),
-        headers={"content-type": "application/x-protobuf"},
-        method="POST",
+    e2e_environment.produce_events((updated_service, updated_service))
+    updated = wait_for(
+        "idempotent complete replacement",
+        60,
+        lambda: _document_with_attribute(e2e_environment, service_id, "service.criticality", "tier-1"),
     )
-    with urllib.request.urlopen(http_request, timeout=10) as response:
-        assert response.status == 200
-        response.read()
-
-
-def _trace_request(seed: int, route: str, server_attributes: dict[str, str]) -> ExportTraceServiceRequest:
-    rng = random.Random(seed)
-    trace_id = rng.randbytes(16)
-    client_span_id = rng.randbytes(8)
-    server_span_id = rng.randbytes(8)
-    start = time.time_ns()
-    attributes = (_attribute("http.request.method", "POST"), _attribute("http.route", route))
-    client = Span(
-        trace_id=trace_id,
-        span_id=client_span_id,
-        name=f"POST {route}",
-        kind=Span.SPAN_KIND_CLIENT,
-        start_time_unix_nano=start,
-        end_time_unix_nano=start + 20_000_000,
-        attributes=attributes,
-        status=Status(code=Status.STATUS_CODE_OK),
+    assert updated["attributes"] == {
+        "service.name": "checkout-api",
+        "service.version": "2.4",
+        "service.criticality": "tier-1",
+    }
+    assert len([document for document in e2e_environment.elasticsearch_sources() if document["id"] == service_id]) == 1
+    updated_query = e2e_environment.post_json(
+        f"{api_url}/api/v1/elements/search",
+        {
+            "pattern": {
+                "op": "eq",
+                "field": "attributes.service.criticality",
+                "value": "tier-1",
+            }
+        },
     )
-    server = Span(
-        trace_id=trace_id,
-        span_id=server_span_id,
-        parent_span_id=client_span_id,
-        name=f"POST {route}",
-        kind=Span.SPAN_KIND_SERVER,
-        start_time_unix_nano=start + 1_000_000,
-        end_time_unix_nano=start + 19_000_000,
-        attributes=attributes,
-        status=Status(code=Status.STATUS_CODE_OK),
-    )
-    return ExportTraceServiceRequest(
-        resource_spans=(
-            _resource_spans("storefront", "shop", "storefront/e2e", client, {}),
-            _resource_spans("checkout-api", "payments", "checkout-api/e2e", server, server_attributes),
+    assert [element["id"] for element in _elements(updated_query)] == [service_id]
+    assert wait_for("committed Kafka offsets", 30, lambda: e2e_environment.committed_offset() >= 4)
+
+    e2e_environment.produce_events(
+        (
+            _delete(edge_id, observed_at + 2, "edge-delete"),
+            _delete(service_id, observed_at + 2, "service-delete"),
         )
     )
-
-
-def _resource_spans(
-    service: str,
-    namespace: str,
-    instance_id: str,
-    span: Span,
-    extra: dict[str, str],
-) -> ResourceSpans:
-    attributes = [
-        _attribute("service.name", service),
-        _attribute("service.namespace", namespace),
-        _attribute("service.instance.id", instance_id),
-    ]
-    attributes.extend(_attribute(key, value) for key, value in extra.items())
-    return ResourceSpans(
-        resource=Resource(attributes=attributes),
-        scope_spans=(
-            ScopeSpans(
-                scope=InstrumentationScope(name="servicegraph-e2e", version="1.0.0"),
-                spans=(span,),
-            ),
-        ),
+    wait_for("deleted Elasticsearch state", 60, lambda: not e2e_environment.elasticsearch_sources())
+    assert wait_for("delete offsets", 30, lambda: e2e_environment.committed_offset() >= 6)
+    deleted_query = e2e_environment.post_json(
+        f"{api_url}/api/v1/elements/search",
+        {"pattern": {"op": "exists", "field": "id"}},
     )
+    assert deleted_query == {"total": 0, "elements": []}
 
 
-def _attribute(key: str, value: str) -> KeyValue:
-    return KeyValue(key=key, value=AnyValue(string_value=value))
+def _upsert(
+    element_id: str,
+    element: dict[str, object],
+    observed_at_unix_nano: int,
+    event_id: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": "1",
+        "event_id": event_id,
+        "event_type": "graph_element_state_changed",
+        "operation": "upsert",
+        "element_id": element_id,
+        "payload_hash": f"hash-{event_id}",
+        "observed_at_unix_nano": observed_at_unix_nano,
+        "emitted_at_unix_ms": observed_at_unix_nano // 1_000_000,
+        "element": element,
+    }
 
 
-def _both_metrics(records: list[tuple[str, str]]) -> bool:
-    values = [value for _, value in records if "traces_service_graph_request_total" in value]
-    return any(ROUTE_A in value for value in values) and any(ROUTE_B in value for value in values)
+def _delete(element_id: str, observed_at_unix_nano: int, event_id: str) -> dict[str, object]:
+    return {
+        "schema_version": "1",
+        "event_id": event_id,
+        "event_type": "graph_element_state_changed",
+        "operation": "delete",
+        "element_id": element_id,
+        "payload_hash": None,
+        "observed_at_unix_nano": observed_at_unix_nano,
+        "emitted_at_unix_ms": observed_at_unix_nano // 1_000_000,
+        "element": None,
+    }
 
 
-def _node_upsert_with_attributes(
+def _documents_by_id(
+    environment: E2EEnvironment,
+    expected_ids: set[str],
+) -> dict[str, dict[str, JsonValue]] | None:
+    documents = environment.elasticsearch_sources()
+    by_id = {str(document["id"]): dict(document) for document in documents}
+    return by_id if expected_ids <= by_id.keys() else None
+
+
+def _document_with_attribute(
     environment: E2EEnvironment,
     element_id: str,
-    expected: dict[str, str],
-) -> tuple[str, dict[str, JsonValue]] | None:
-    for record in reversed(environment.kafka_records("graph.elements.events")):
-        event = _event(record)
-        if event is None or event.get("operation") != "upsert" or event.get("element_id") != element_id:
+    attribute: str,
+    expected: JsonValue,
+) -> dict[str, JsonValue] | None:
+    for document in environment.elasticsearch_sources():
+        if document["id"] != element_id:
             continue
-        element = _object(event["element"])
-        attributes = _object(element["attributes"])
-        if all(attributes.get(key) == value for key, value in expected.items()):
-            return record[0], event
+        attributes = document["attributes"]
+        if isinstance(attributes, dict) and attributes.get(attribute) == expected:
+            return dict(document)
     return None
 
 
-def _dependency_upsert(environment: E2EEnvironment) -> tuple[str, dict[str, JsonValue]] | None:
-    for record in reversed(environment.kafka_records("graph.elements.events")):
-        event = _event(record)
-        if event is None or event.get("operation") != "upsert":
-            continue
-        element = _object(event["element"])
-        if (
-            element.get("kind") == "edge"
-            and element.get("type") == "calls"
-            and element.get("source_id") == "service:storefront"
-            and element.get("target_id") == "service:checkout-api"
-        ):
-            return record[0], event
-    return None
-
-
-def _element_event(
-    environment: E2EEnvironment,
-    operation: str,
-    element_id: str,
-) -> tuple[str, dict[str, JsonValue]] | None:
-    for record in reversed(environment.kafka_records("graph.elements.events")):
-        event = _event(record)
-        if event is not None and event.get("operation") == operation and event.get("element_id") == element_id:
-            return record[0], event
-    return None
-
-
-def _event(record: tuple[str, str]) -> dict[str, JsonValue] | None:
-    try:
-        value = json.loads(record[1])
-    except json.JSONDecodeError:
-        return None
-    return cast(dict[str, JsonValue], value) if isinstance(value, dict) else None
-
-
-def _expected_elements(value: JsonValue) -> list[JsonValue] | None:
-    elements = _array(value)
-    ids = {str(_object(item)["id"]) for item in elements}
-    return elements if {"service:storefront", "service:checkout-api", ENDPOINT_A, ENDPOINT_B} <= ids else None
-
-
-def _partial_projection(value: JsonValue) -> list[JsonValue] | None:
-    elements = _array(value)
-    ids = {str(_object(item)["id"]) for item in elements}
-    return elements if ENDPOINT_A not in ids and {"service:checkout-api", ENDPOINT_B} <= ids else None
-
-
-def _assert_expected_edges(value: JsonValue) -> None:
-    edges = [_object(edge) for edge in _array(_object(value)["edges"])]
-    assert any(
-        edge.get("source") == "service:storefront"
-        and edge.get("target") == "service:checkout-api"
-        and edge.get("type") == "calls"
-        for edge in edges
-    )
-    assert any(
-        edge.get("source") == "service:checkout-api"
-        and edge.get("target") == ENDPOINT_B
-        and edge.get("type") == "exposes"
-        for edge in edges
-    )
-
-
-def _projection_is_empty(value: JsonValue) -> bool:
-    status = _object(value)
-    return status.get("elements") == 0 and status.get("nodes") == 0 and status.get("edges") == 0
-
-
-def _object(value: JsonValue) -> dict[str, JsonValue]:
-    assert isinstance(value, dict)
-    return value
-
-
-def _array(value: JsonValue) -> list[JsonValue]:
-    assert isinstance(value, list)
-    return value
+def _elements(response: dict[str, JsonValue]) -> list[dict[str, JsonValue]]:
+    elements = response["elements"]
+    assert isinstance(elements, list)
+    return [element for value in elements if isinstance(value, dict) for element in [value]]

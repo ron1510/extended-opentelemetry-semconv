@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import re
 from collections.abc import Sequence
@@ -13,6 +14,7 @@ from typing import NamedTuple
 import yaml
 
 from extended_otel_semconv.graph.dimensions import service_graph_dimensions
+from extended_otel_semconv.graph.elements import GRAPH_REQUEST_FAILED_TOTAL, GRAPH_REQUEST_TOTAL
 from extended_otel_semconv.registry.model import (
     AttributeDefinition,
     EntityAttributeRef,
@@ -23,6 +25,7 @@ from extended_otel_semconv.registry.model import (
 from extended_otel_semconv.registry.validation import load_model_registry, validate_extension_model
 
 ROOT = Path(__file__).resolve().parents[4]
+ELASTICSEARCH_MAPPING_SCHEMA_VERSION = "1"
 
 
 class GenerationPaths(NamedTuple):
@@ -33,6 +36,7 @@ class GenerationPaths(NamedTuple):
     package_lock: Path
     relationship_metadata: Path
     collector_dimensions: Path
+    elasticsearch_mapping: Path
 
 
 class GeneratedEntity(NamedTuple):
@@ -53,6 +57,7 @@ def default_generation_paths(root: Path = ROOT) -> GenerationPaths:
         package_lock=package / "metadata" / "otel-semconv.lock.json",
         relationship_metadata=package / "metadata" / "service-graph-relationships.json",
         collector_dimensions=root / "deploy" / "helm" / "servicegraph-collector" / "files" / "dimensions.yaml",
+        elasticsearch_mapping=package / "metadata" / "elasticsearch-graph-elements-index.json",
     )
 
 
@@ -89,6 +94,7 @@ def generate_files(paths: GenerationPaths) -> dict[Path, str]:
         paths.package_lock: paths.upstream_lock.read_text(encoding="utf-8"),
         paths.relationship_metadata: _render_relationship_metadata(relationships),
         paths.collector_dimensions: _render_collector_dimensions(registry),
+        paths.elasticsearch_mapping: _render_elasticsearch_mapping(registry, paths.upstream_lock),
     }
     for domain in domains:
         domain_entities = tuple(entity for entity in generated_entities if entity.domain == domain)
@@ -291,6 +297,69 @@ def _render_collector_dimensions(registry: RegistryDocument) -> str:
         sort_keys=False,
         default_flow_style=False,
     )
+
+
+def _render_elasticsearch_mapping(registry: RegistryDocument, upstream_lock: Path) -> str:
+    attributes = {
+        dimension: _elasticsearch_field_mapping(registry.attributes_by_id[dimension])
+        for dimension in service_graph_dimensions(registry)
+    }
+    mappings: dict[str, object] = {
+        "_meta": {
+            "schema_version": ELASTICSEARCH_MAPPING_SCHEMA_VERSION,
+            "upstream_registry_lock_sha256": hashlib.sha256(upstream_lock.read_bytes()).hexdigest(),
+        },
+        "dynamic": "strict",
+        "properties": {
+            "schema_version": {"type": "keyword"},
+            "event_id": {"type": "keyword"},
+            "payload_hash": {"type": "keyword"},
+            "id": {"type": "keyword"},
+            "kind": {"type": "keyword"},
+            "type": {"type": "keyword"},
+            "source_id": {"type": "keyword"},
+            "target_id": {"type": "keyword"},
+            "attributes": {
+                "dynamic": "strict",
+                "subobjects": False,
+                "properties": attributes,
+            },
+            "metrics": {
+                "dynamic": "strict",
+                "subobjects": False,
+                "properties": {
+                    GRAPH_REQUEST_FAILED_TOTAL: {"type": "double", "coerce": False},
+                    GRAPH_REQUEST_TOTAL: {"type": "double", "coerce": False},
+                },
+            },
+            "observed_at_unix_nano": {"type": "long", "coerce": False},
+            "emitted_at_unix_ms": {"type": "long", "coerce": False},
+        },
+    }
+    metadata = mappings["_meta"]
+    assert isinstance(metadata, dict)
+    metadata["mapping_hash"] = _mapping_hash(mappings)
+    return json.dumps({"mappings": mappings}, indent=2, sort_keys=True) + "\n"
+
+
+def _elasticsearch_field_mapping(attribute: AttributeDefinition) -> dict[str, object]:
+    attribute_type = attribute.type
+    if isinstance(attribute_type, dict) and "members" in attribute_type:
+        return {"type": "keyword"}
+    if attribute_type == "string":
+        return {"type": "keyword"}
+    if attribute_type == "int":
+        return {"type": "long", "coerce": False}
+    if attribute_type == "boolean":
+        return {"type": "boolean"}
+    if attribute_type == "double":
+        return {"type": "double", "coerce": False}
+    raise ValueError(f"unsupported Elasticsearch field type for {attribute.id}: {attribute_type!r}")
+
+
+def _mapping_hash(mappings: dict[str, object]) -> str:
+    canonical = json.dumps(mappings, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _python_type(attribute: AttributeDefinition | None) -> str:

@@ -1,6 +1,7 @@
 # Upgrades and Recovery
 
-The Collector, Flink application, and UI have different upgrade behavior.
+The Collector, Flink application, and Elasticsearch access services have
+different upgrade behavior.
 
 ## Before every upgrade
 
@@ -90,19 +91,23 @@ kubectl rollout status deployment/processing-servicegraph-flink-jobmanager `
 Submit new traffic after recovery. A ready control plane alone does not prove
 the data path recovered.
 
-## UI upgrade and replay
+## Access upgrade and replay
 
-The UI uses `Recreate` with one RWO SQLite claim. An image upgrade stops the old
-pod before starting the new one.
+The access initializer runs before installation and upgrade. It accepts an
+exactly matching index and refuses mapping or immutable-setting drift. The API
+is stateless. Projector replicas share one Kafka consumer group and use
+deterministic Elasticsearch document IDs, so replayed upserts and deletes are
+idempotent.
 
-The database records applied Kafka offsets transactionally. On restart, the
-consumer resumes from those offsets. To rebuild:
+To rebuild the projection deliberately:
 
-1. stop the UI Deployment;
-2. preserve or snapshot the existing claim;
-3. attach a new empty claim;
-4. ensure Kafka retention still contains the desired history;
-5. start the UI and monitor replay lag.
+1. stop the projector Deployment;
+2. confirm Kafka retention contains the required lifecycle history;
+3. delete and recreate the index through an approved migration procedure;
+4. reset or replace the projector consumer group;
+5. restart the projector and monitor replay lag.
+
+The chart never performs these destructive steps automatically.
 
 ## Registry and event-schema upgrades
 
@@ -127,7 +132,7 @@ A code rollback is safe only when the old image can read:
 - the current Flink savepoint or checkpoint state;
 - current Kafka records;
 - the current graph-element event schema;
-- current SQLite schema, when rolling back the UI.
+- the generated Elasticsearch mapping and access API contract.
 
 Preserve the previous image digest, chart values, and generated upgrade
 savepoint until post-upgrade verification is complete. Helm rollback changes

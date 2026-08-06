@@ -1,4 +1,0 @@
-Servicegraph visualization: {{ include "servicegraph-ui.fullname" . }}
-
-kubectl port-forward --namespace {{ .Release.Namespace }} \
-  service/{{ include "servicegraph-ui.fullname" . }} 8080:{{ .Values.service.port }}

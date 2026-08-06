@@ -1,0 +1,13 @@
+The Elasticsearch graph-elements index initializer and projector have been scheduled.
+
+Inspect the hook Job:
+  kubectl get jobs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+Read initializer logs:
+  kubectl logs -n {{ .Release.Namespace }} job/{{ include "servicegraph-access.fullname" . }}-index-initializer
+
+Follow projector logs:
+  kubectl logs -n {{ .Release.Namespace }} deployment/{{ include "servicegraph-access.fullname" . }}-projector --follow
+
+Port-forward the query API:
+  kubectl port-forward -n {{ .Release.Namespace }} service/{{ include "servicegraph-access.fullname" . }}-api 8080:{{ .Values.api.port }}

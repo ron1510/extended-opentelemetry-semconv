@@ -9,9 +9,11 @@ assumes Kafka is already available.
 - Helm 3;
 - Kafka-compatible brokers reachable from the namespace;
 - two pre-created topics;
+- Elasticsearch 8.15 or a later 8.x release reachable from the namespace;
 - an internal container registry;
 - shared persistent storage for Flink;
-- an existing Kafka credentials Secret when using `SASL_SSL`.
+- existing Kafka and Elasticsearch credential Secrets when authentication is
+  enabled.
 
 The charts create standard Kubernetes resources and no CRDs. Workloads run as
 non-root users with privilege escalation disabled, all capabilities dropped,
@@ -31,11 +33,11 @@ docker build \
   .
 ```
 
-Build optional images:
+Build the access image and optional demo image:
 
 ```console
-docker build --file apps/servicegraph-ui/Dockerfile \
-  --tag registry.internal.example/extended-otel-servicegraph-ui:0.1.2 .
+docker build --file apps/servicegraph-access/Dockerfile \
+  --tag registry.internal.example/extended-otel-servicegraph-access:0.3.0 .
 
 docker build --file apps/servicegraph-demo/Dockerfile \
   --tag registry.internal.example/extended-otel-servicegraph-demo:0.1.1 .
@@ -145,11 +147,17 @@ See [Collector configuration](configuration/collector.md), [Flink
 configuration](configuration/flink.md), and the [Helm values
 reference](reference/helm-values.md) before changing topology or state values.
 
+Create `internal-access-values.yaml` for the same Kafka contract and your
+existing Elasticsearch service. See [Elasticsearch projection and query
+API](deployment/elasticsearch.md) for endpoint, Secret, privilege, mapping,
+query, and immutable shard-count requirements.
+
 ## Validate before installation
 
 ```console
 helm lint deploy/helm/servicegraph-collector
 helm lint deploy/helm/servicegraph-flink
+helm lint deploy/helm/servicegraph-access
 
 helm template collection deploy/helm/servicegraph-collector \
   --namespace servicegraph-system \
@@ -158,6 +166,10 @@ helm template collection deploy/helm/servicegraph-collector \
 helm template processing deploy/helm/servicegraph-flink \
   --namespace servicegraph-system \
   --values internal-flink-values.yaml
+
+helm template access deploy/helm/servicegraph-access \
+  --namespace servicegraph-system \
+  --values internal-access-values.yaml
 ```
 
 Review rendered Secrets references, images, storage classes, RBAC, resource
@@ -198,23 +210,27 @@ Subsequent `helm upgrade` operations stop the active job with a savepoint,
 roll the runtime image and configuration, and restore the same job ID from
 that savepoint. Keep the cluster ID, fixed job ID, and state claim stable.
 
-## Install optional visualization
+## Install projection and query access
 
-Create values matching the same Kafka contract, then install:
+The pre-install initializer creates or verifies the strict index before the
+projector and API start:
 
 ```console
-helm upgrade --install visualization deploy/helm/servicegraph-ui \
+helm upgrade --install access deploy/helm/servicegraph-access \
   --namespace servicegraph-system \
-  --values internal-ui-values.yaml \
+  --values internal-access-values.yaml \
   --wait --timeout 5m
 ```
 
-Expose it using your internal Ingress or a local port-forward:
+Keep the API internal to the cluster or use a local port-forward:
 
 ```console
 kubectl port-forward --namespace servicegraph-system \
-  service/servicegraph-ui 8080:8080
+  service/servicegraph-access-api 8080:8080
 ```
+
+Kibana may inspect the `servicegraph-elements` index directly. Product
+consumers should use the typed `POST /api/v1/elements/search` contract.
 
 ## Install optional demo traffic
 
@@ -236,13 +252,17 @@ services are explicitly desired.
 4. Send paired client/server traces to the router.
 5. Confirm the metrics topic advances.
 6. Confirm node and edge upserts appear.
-7. Stop the contributing telemetry and wait for the configured TTL.
-8. Confirm Flink emits element deletes and the UI removes them.
+7. Confirm the projector commits offsets and documents appear in Elasticsearch.
+8. Query expected nodes and edges through the access API.
+9. Stop the contributing telemetry and wait for the configured TTL.
+10. Confirm Flink emits element deletes and Elasticsearch removes the
+    corresponding documents.
 
 See [Monitoring](operations/monitoring.md) for commands and production signals.
 
 ## Uninstall behavior
 
 Helm deletes the Flink Deployments, Service, and configuration. Kubernetes HA
-ConfigMaps and retained Flink and UI claims can remain. Inspect and preserve
-checkpoints or savepoints before deleting runtime resources or storage.
+ConfigMaps and the retained Flink claim can remain. Uninstalling the access
+chart does not delete the Elasticsearch index. Inspect and preserve checkpoints
+or savepoints before deleting runtime resources or storage.

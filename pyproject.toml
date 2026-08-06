@@ -1,6 +1,7 @@
 [dependency-groups]
 dev = [
   "hypothesis==6.158.0",
+  "httpx==0.28.1",
   "pyright==1.1.411",
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
@@ -14,18 +15,19 @@ docs = [
 addopts = ["--strict-markers"]
 markers = [
   "e2e: provisions a disposable Kubernetes environment and exercises the complete runtime",
+  "elasticsearch: starts a disposable Elasticsearch container",
 ]
 pythonpath = [
   "packages/extended-opentelemetry-semconv/src",
   "apps/otel-servicegraph-diff/src",
   "apps/servicegraph-demo/src",
-  "apps/servicegraph-ui/src",
+  "apps/servicegraph-access/src",
 ]
 testpaths = [
   "tests",
   "apps/otel-servicegraph-diff/tests",
   "apps/servicegraph-demo/tests",
-  "apps/servicegraph-ui/tests",
+  "apps/servicegraph-access/tests",
 ]
 
 [tool.coverage.run]
@@ -52,7 +54,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["RUF043"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["extended_otel_semconv", "otel_servicegraph_diff", "servicegraph_demo"]
+known-first-party = ["extended_otel_semconv", "otel_servicegraph_diff", "servicegraph_access", "servicegraph_demo"]
 
 [tool.pyright]
 include = [
@@ -63,8 +65,8 @@ include = [
   "apps/otel-servicegraph-diff/tests",
   "apps/servicegraph-demo/src",
   "apps/servicegraph-demo/tests",
-  "apps/servicegraph-ui/src",
-  "apps/servicegraph-ui/tests",
+  "apps/servicegraph-access/src",
+  "apps/servicegraph-access/tests",
   "tests/conftest.py",
   "tests/e2e",
   "tests/test_codegen.py",
@@ -73,7 +75,7 @@ extraPaths = [
   "packages/extended-opentelemetry-semconv/src",
   "apps/otel-servicegraph-diff/src",
   "apps/servicegraph-demo/src",
-  "apps/servicegraph-ui/src",
+  "apps/servicegraph-access/src",
 ]
 pythonVersion = "3.12"
 venvPath = "."

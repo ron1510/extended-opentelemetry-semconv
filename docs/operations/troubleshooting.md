@@ -12,13 +12,15 @@ Check:
 4. the metrics topic receives OTLP JSON;
 5. Flink is `RUNNING`;
 6. output topic offsets advance;
-7. UI readiness is healthy.
+7. projector offsets advance;
+8. API readiness is healthy.
 
 ```console
 kubectl get pods -n servicegraph-system
 kubectl logs -n servicegraph-system deployment/servicegraph-collector-router
 kubectl logs -n servicegraph-system statefulset/servicegraph-collector-backend
-kubectl logs -n servicegraph-system deployment/servicegraph-ui
+kubectl logs -n servicegraph-system deployment/servicegraph-access-projector
+kubectl logs -n servicegraph-system deployment/servicegraph-access-api
 ```
 
 The service-graph connector cannot pair traces that are incomplete, sampled
@@ -147,17 +149,19 @@ or semantic normalization. Inspect TaskManager logs and a sample Kafka record.
 Only supported service-graph metric names and numeric points with required
 client/server fields affect state.
 
-## UI reports ready but data is old
+## API reports ready but data is old
 
 Compare:
 
-- `/api/v1/status` last-event time;
 - output-topic end offsets;
-- SQLite source offsets;
-- UI consumer logs.
+- projector consumer-group offsets;
+- projector logs;
+- Elasticsearch document timestamps.
 
-The UI can be caught up but display old elements if Flink has not emitted
-the expected delete. It can also lag while replaying a retained topic.
+The projector can be caught up while the index still contains an element if
+Flink has not emitted the expected delete. A projector restart can also replay
+records safely because deterministic IDs make indexing and deletion
+idempotent.
 
 ## Kafka authentication failures
 

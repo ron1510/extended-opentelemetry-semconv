@@ -167,9 +167,11 @@ signals, and stale generated files.
 6. Upgrade the Collector chart from the same commit.
 7. Deploy Flink using the normal state-compatible upgrade process.
 8. Emit matching telemetry.
-9. Verify the new entity and edge through the output topic or UI API.
+9. Verify the new entity and edge through the output topic, query API, or
+   Elasticsearch index.
 
-The UI is generic and does not require code changes for a new type.
+The generated mapping and typed query API support new scalar dimensions after
+regeneration and deployment without application-specific visualization code.
 
 ## Upgrade the upstream snapshot
 

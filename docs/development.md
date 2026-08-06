@@ -10,7 +10,7 @@ python -m venv .venv
 python -m pip install -e packages/extended-opentelemetry-semconv
 python -m pip install -e apps/otel-servicegraph-diff
 python -m pip install -e apps/servicegraph-demo
-python -m pip install -e apps/servicegraph-ui
+python -m pip install -e apps/servicegraph-access
 python -m pip install hypothesis pytest pytest-cov pyright ruff
 ```
 
@@ -39,19 +39,12 @@ python -m pytest -m "not e2e"
 helm lint deploy/helm/servicegraph-collector
 helm lint deploy/helm/servicegraph-demo
 helm lint deploy/helm/servicegraph-flink
-helm lint deploy/helm/servicegraph-ui
-```
-
-Build the frontend:
-
-```console
-cd apps/servicegraph-ui/frontend
-npm install
-npm run build
+helm lint deploy/helm/servicegraph-access
 ```
 
 Tests focus on registry validation, generated artifacts, pure interaction
-transitions, Flink timers, demo topology, and idempotent UI projection.
+transitions, Flink timers, demo topology, Elasticsearch projection, and typed
+query translation.
 
 ## Documentation
 
@@ -81,15 +74,15 @@ docker build \
 
 The build compiles Java serializers, resolves the Flink Kafka connector,
 installs Python packages and dependencies, and copies them into the Flink
-2.2.1 Java 11 image. The UI Docker build compiles frontend assets before
-installing its Python service. The demo image installs its package directly.
+2.2.1 Java 11 image. The access and demo images install their packages
+directly.
 
 For local MiniCluster execution and PyCharm setup, see
 [Run the PyFlink job locally](development/local-pyflink.md).
 
 ## Release checklist
 
-1. Run generated-file, Python, frontend, Helm, and documentation checks.
+1. Run generated-file, Python, Helm, and documentation checks.
 2. Build images from a clean commit.
 3. Run the complete local lifecycle test.
 4. Record image digests.
@@ -99,5 +92,5 @@ For local MiniCluster execution and PyCharm setup, see
 8. Describe entity, relationship, dimension, state, and event changes in the
    release notes.
 
-Mirror Python, Maven, Flink, Collector, and frontend dependencies into internal
+Mirror Python, Maven, Flink, and Collector dependencies into internal
 repositories when deployment environments cannot access public registries.

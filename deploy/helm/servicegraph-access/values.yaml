@@ -1,0 +1,78 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: registry.internal.example/extended-otel-servicegraph-access
+  tag: "0.3.0"
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+projector:
+  replicas: 1
+  groupId: servicegraph-elasticsearch-projector
+
+api:
+  replicas: 1
+  port: 8080
+  elasticsearchPageSize: 1000
+
+streamContract:
+  kafka:
+    brokers:
+      - kafka.internal.example:9092
+    security:
+      protocol: SASL_SSL
+      saslMechanism: SCRAM-SHA-256
+      existingSecret: servicegraph-kafka-auth
+      usernameKey: username
+      passwordKey: password
+      caKey: ca.crt
+  topics:
+    interactionEvents: graph.elements.events
+
+elasticsearch:
+  urls:
+    - https://elasticsearch-es-http.elasticsearch.svc:9200
+  indexName: servicegraph-elements
+  numberOfShards: 1
+  numberOfReplicas: 1
+  refreshInterval: 5s
+  connectionDeadlineSeconds: 300
+  auth:
+    existingSecret: servicegraph-elasticsearch-auth
+    usernameKey: username
+    passwordKey: password
+  tls:
+    existingSecret: servicegraph-elasticsearch-ca
+    caKey: ca.crt
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+emptyDir:
+  tmpSizeLimit: 64Mi

@@ -51,11 +51,11 @@ consumers can apply commands idempotently.
 | --- | --- |
 | `packages/extended-opentelemetry-semconv` | Registry validation, generated entities, OTLP parsing, and pure graph transitions |
 | `apps/otel-servicegraph-diff` | PyFlink Kafka source, keyed state, timers, checkpoints, and event sink |
-| `apps/servicegraph-ui` | Optional SQLite projection, HTTP API, and graph interface |
+| `apps/servicegraph-access` | Elasticsearch initializer, lifecycle projector, and typed query API |
 | `apps/servicegraph-demo` | Optional long-running synthetic OTLP traffic |
 | `deploy/helm/servicegraph-collector` | Trace router and stateful service-graph extraction |
 | `deploy/helm/servicegraph-flink` | Standalone Flink Session cluster, submission, and storage |
-| `deploy/helm/servicegraph-ui` | Optional visualization service |
+| `deploy/helm/servicegraph-access` | Elasticsearch initializer, projector, and query API |
 | `deploy/helm/servicegraph-demo` | Optional traffic generator |
 
 Kafka and topic creation remain platform responsibilities. Deployment uses
@@ -68,4 +68,5 @@ standard Kubernetes resources, Helm, and no CRDs.
 - [Understand the semantic entity model](concepts/semantic-model.md)
 - [Add your first custom entity](getting-started/custom-entity.md)
 - [Deploy to an existing Kubernetes cluster](deployment-and-operations.md)
+- [Project and query graph elements through Elasticsearch](deployment/elasticsearch.md)
 - [Consume the graph element event stream](reference/event-schema.md)

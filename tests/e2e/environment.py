@@ -1,3 +1,5 @@
+# pyright: reportUnknownMemberType=false
+
 from __future__ import annotations
 
 import json
@@ -14,10 +16,16 @@ from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
+from kafka import KafkaAdminClient, KafkaProducer
+from kafka.admin import NewTopic
+
+# kafka-python-ng exposes dynamic producer future and admin response types.
+
 type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 
 KIND_NODE_IMAGE = "kindest/node:v1.32.2"
-REDPANDA_CHART_VERSION = "26.1.3"
+REDPANDA_IMAGE = "docker.redpanda.com/redpandadata/redpanda:v26.1.6"
+ELASTICSEARCH_IMAGE = "docker.elastic.co/elasticsearch/elasticsearch:8.15.5"
 NAMESPACE = "servicegraph-e2e"
 
 
@@ -43,37 +51,39 @@ class E2EEnvironment:
     work_dir: Path
     cluster_name: str = field(default_factory=lambda: f"servicegraph-e2e-{uuid4().hex[:8]}")
     namespace: str = NAMESPACE
-    port_forwards: list[PortForward] = field(default_factory=lambda: list[PortForward]())
+    elasticsearch_host_url: str | None = field(default=None, init=False)
+    kafka_host_address: str | None = field(default=None, init=False)
+    port_forwards: list[PortForward] = field(default_factory=lambda: list[PortForward](), init=False)
 
     @property
     def kubeconfig(self) -> Path:
         return self.work_dir / "kubeconfig"
 
     @property
-    def image_suffix(self) -> str:
+    def suffix(self) -> str:
         return self.cluster_name.removeprefix("servicegraph-e2e-")
 
     @property
-    def flink_image(self) -> str:
-        return f"extended-otel-flink-runtime:e2e-{self.image_suffix}"
+    def access_image(self) -> str:
+        return f"extended-otel-servicegraph-access:e2e-{self.suffix}"
 
     @property
-    def ui_repository(self) -> str:
-        return "extended-otel-servicegraph-ui"
+    def elasticsearch_container(self) -> str:
+        return f"servicegraph-es-{self.suffix}"
 
     @property
-    def ui_tag(self) -> str:
-        return f"e2e-{self.image_suffix}"
+    def redpanda_container(self) -> str:
+        return f"servicegraph-kafka-{self.suffix}"
 
     @property
-    def ui_image(self) -> str:
-        return f"{self.ui_repository}:{self.ui_tag}"
+    def command_environment(self) -> dict[str, str]:
+        return {**os.environ, "KUBECONFIG": str(self.kubeconfig)}
 
     def provision(self) -> None:
         self._announce("checking local prerequisites")
         self._check_prerequisites()
-        self._announce("building Flink and UI images from the current checkout")
-        self._build_images()
+        self._announce("building the access production image")
+        self._build_access_image()
         self._announce(f"creating Kind cluster {self.cluster_name}")
         self.run(
             [
@@ -92,24 +102,29 @@ class E2EEnvironment:
             timeout=600,
             include_kubeconfig=False,
         )
-        self._announce("loading project images into Kind")
-        for image in (self.flink_image, self.ui_image):
-            self.run(
-                ["kind", "load", "docker-image", image, "--name", self.cluster_name],
-                timeout=900,
-                include_kubeconfig=False,
-            )
+        self.run(
+            ["kind", "load", "docker-image", self.access_image, "--name", self.cluster_name],
+            timeout=600,
+            include_kubeconfig=False,
+        )
         self.kubectl("create", "namespace", self.namespace)
-        self._announce("installing Redpanda and creating topics")
-        self._install_redpanda()
-        self._announce("installing Collector, Flink, and UI charts")
-        self._install_project()
-        self._announce("disposable environment is ready")
+        self._announce("starting Docker Redpanda and Elasticsearch")
+        self._start_elasticsearch()
+        self._start_redpanda()
+        self._announce("installing the access Helm chart")
+        self._install_access()
+        self._announce("focused projector environment is ready")
 
     def cleanup(self) -> None:
         for forward in reversed(self.port_forwards):
             forward.close()
         self.port_forwards.clear()
+        self.run(
+            ["docker", "rm", "--force", self.elasticsearch_container, self.redpanda_container],
+            timeout=120,
+            check=False,
+            include_kubeconfig=False,
+        )
         self.run(
             ["kind", "delete", "cluster", "--name", self.cluster_name],
             timeout=300,
@@ -117,7 +132,7 @@ class E2EEnvironment:
             include_kubeconfig=False,
         )
         self.run(
-            ["docker", "image", "rm", self.flink_image, self.ui_image],
+            ["docker", "image", "rm", self.access_image],
             timeout=120,
             check=False,
             include_kubeconfig=False,
@@ -125,36 +140,76 @@ class E2EEnvironment:
         self.kubeconfig.unlink(missing_ok=True)
 
     def diagnostics(self) -> str:
-        commands = (
+        sections: list[str] = []
+        for command in (
             ["get", "pods", "-o", "wide"],
             ["get", "jobs"],
             ["get", "events", "--sort-by=.metadata.creationTimestamp"],
-            ["logs", "deployment/processing-servicegraph-flink-jobmanager", "--tail=200"],
-            ["logs", "deployment/processing-servicegraph-flink-taskmanager", "--tail=200"],
-            ["logs", "deployment/servicegraph-collector-router", "--tail=100"],
-            ["logs", "statefulset/servicegraph-collector-backend", "--tail=100"],
-            ["logs", "deployment/servicegraph-ui", "--tail=100"],
-        )
-        sections: list[str] = []
-        for command in commands:
+            ["logs", "deployment/servicegraph-access-projector", "--tail=200"],
+            ["logs", "deployment/servicegraph-access-api", "--tail=200"],
+        ):
             result = self.kubectl(*command, check=False, timeout=60)
             sections.append(f"$ kubectl {' '.join(command)}\n{result.stdout}{result.stderr}")
+        for container in (self.redpanda_container, self.elasticsearch_container):
+            result = self.run(
+                ["docker", "logs", "--tail", "100", container],
+                timeout=60,
+                check=False,
+                include_kubeconfig=False,
+            )
+            sections.append(f"$ docker logs {container}\n{result.stdout}{result.stderr}")
         return "\n\n".join(sections)
 
-    def start_port_forward(self, resource: str, remote_port: int) -> str:
+    def produce_events(self, events: Sequence[dict[str, object]]) -> None:
+        address = self.kafka_host_address
+        if address is None:
+            raise RuntimeError("Redpanda host address is not initialized")
+        producer = KafkaProducer(
+            bootstrap_servers=address,
+            key_serializer=_serialize_key,
+            value_serializer=_serialize_event,
+        )
+        try:
+            for event in events:
+                producer.send("graph.elements.events", key=cast(str, event["element_id"]), value=event).get(timeout=30)
+            producer.flush(timeout=30)
+        finally:
+            producer.close(timeout=10)
+
+    def committed_offset(self) -> int:
+        address = self.kafka_host_address
+        if address is None:
+            raise RuntimeError("Redpanda host address is not initialized")
+        admin = KafkaAdminClient(bootstrap_servers=address)
+        try:
+            offsets = admin.list_consumer_group_offsets("servicegraph-elasticsearch-projector")
+            return max((metadata.offset for metadata in offsets.values()), default=0)
+        finally:
+            admin.close()
+
+    def elasticsearch_sources(self) -> list[dict[str, JsonValue]]:
+        url = self.elasticsearch_host_url
+        if url is None:
+            raise RuntimeError("Elasticsearch host URL is not initialized")
+        with urllib.request.urlopen(f"{url}/servicegraph-elements/_search?size=500", timeout=5) as response:
+            document = cast(dict[str, JsonValue], json.loads(response.read()))
+        hits_section = cast(dict[str, JsonValue], document["hits"])
+        hits = cast(list[JsonValue], hits_section["hits"])
+        return [cast(dict[str, JsonValue], cast(dict[str, JsonValue], hit)["_source"]) for hit in hits]
+
+    def start_api_port_forward(self) -> str:
         local_port = _free_port()
-        command = [
-            "kubectl",
-            "port-forward",
-            "--namespace",
-            self.namespace,
-            resource,
-            f"{local_port}:{remote_port}",
-            "--address",
-            "127.0.0.1",
-        ]
         process = subprocess.Popen(
-            command,
+            [
+                "kubectl",
+                "port-forward",
+                "--namespace",
+                self.namespace,
+                "service/servicegraph-access-api",
+                f"{local_port}:8080",
+                "--address",
+                "127.0.0.1",
+            ],
             cwd=self.root,
             env=self.command_environment,
             stdout=subprocess.PIPE,
@@ -163,74 +218,31 @@ class E2EEnvironment:
             encoding="utf-8",
             errors="replace",
         )
-        forward = PortForward(process=process, local_port=local_port)
+        forward = PortForward(process, local_port)
         self.port_forwards.append(forward)
 
         def ready() -> bool:
             if process.poll() is not None:
                 output = process.stdout.read() if process.stdout is not None else ""
-                raise RuntimeError(f"port-forward exited with {process.returncode}: {output}")
+                raise RuntimeError(f"API port-forward failed: {output}")
             try:
-                with socket.create_connection(("127.0.0.1", local_port), timeout=1):
-                    return True
-            except OSError:
+                with urllib.request.urlopen(f"http://127.0.0.1:{local_port}/health/ready", timeout=2) as response:
+                    return response.status == 200
+            except urllib.error.URLError:
                 return False
 
-        wait_for(f"port-forward {resource}", 30, ready)
+        wait_for("access API port-forward", 30, ready)
         return f"http://127.0.0.1:{local_port}"
 
-    def get_json(self, url: str) -> JsonValue:
-        request = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(request, timeout=5) as response:
-            return cast(JsonValue, json.loads(response.read()))
-
-    def kafka_records(self, topic: str) -> list[tuple[str, str]]:
-        command = [
-            "kubectl",
-            "exec",
-            "--namespace",
-            self.namespace,
-            "streaming-0",
-            "-c",
-            "redpanda",
-            "--",
-            "rpk",
-            "-X",
-            "brokers=streaming:9093",
-            "topic",
-            "consume",
-            topic,
-            "-o",
-            "start",
-            "--format",
-            "%k\\t%v\\n",
-        ]
-        process = subprocess.Popen(
-            command,
-            cwd=self.root,
-            env=self.command_environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+    def post_json(self, url: str, document: dict[str, object]) -> dict[str, JsonValue]:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(document).encode(),
+            headers={"content-type": "application/json"},
+            method="POST",
         )
-        try:
-            stdout, _ = process.communicate(timeout=4)
-        except subprocess.TimeoutExpired:
-            process.terminate()
-            try:
-                stdout, _ = process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                stdout, _ = process.communicate(timeout=5)
-        records: list[tuple[str, str]] = []
-        for line in stdout.splitlines():
-            if "\t" not in line:
-                continue
-            key, value = line.split("\t", maxsplit=1)
-            records.append((key, value))
-        return records
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return cast(dict[str, JsonValue], json.loads(response.read()))
 
     def kubectl(
         self,
@@ -238,15 +250,7 @@ class E2EEnvironment:
         timeout: int = 120,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        return self.run(
-            ["kubectl", "--namespace", self.namespace, *args],
-            timeout=timeout,
-            check=check,
-        )
-
-    @property
-    def command_environment(self) -> dict[str, str]:
-        return {**os.environ, "KUBECONFIG": str(self.kubeconfig)}
+        return self.run(["kubectl", "--namespace", self.namespace, *args], timeout=timeout, check=check)
 
     def run(
         self,
@@ -256,11 +260,10 @@ class E2EEnvironment:
         check: bool = True,
         include_kubeconfig: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        environment = self.command_environment if include_kubeconfig else os.environ.copy()
         result = subprocess.run(
             command,
             cwd=self.root,
-            env=environment,
+            env=self.command_environment if include_kubeconfig else os.environ.copy(),
             check=False,
             capture_output=True,
             text=True,
@@ -279,40 +282,19 @@ class E2EEnvironment:
             raise RuntimeError(f"missing E2E prerequisites: {', '.join(missing)}")
         self.run(["docker", "version"], timeout=30, include_kubeconfig=False)
 
-    def _announce(self, message: str) -> None:
-        print(f"[servicegraph-e2e] {message}", flush=True)
-
-    def _build_images(self) -> None:
+    def _build_access_image(self) -> None:
         build_arguments: list[str] = []
-        for name in ("PIP_INDEX_URL", "PIP_TRUSTED_HOST", "NPM_CONFIG_REGISTRY"):
-            value = os.getenv(name)
-            if value:
-                build_arguments.extend(["--build-arg", f"{name}={value}"])
-        maven_settings = os.getenv("MAVEN_SETTINGS")
-        maven_secret = ["--secret", f"id=maven_settings,src={maven_settings}"] if maven_settings else []
+        for name in ("PIP_INDEX_URL", "PIP_TRUSTED_HOST"):
+            if value := os.getenv(name):
+                build_arguments.extend(("--build-arg", f"{name}={value}"))
         self.run(
             [
                 "docker",
                 "build",
                 "--tag",
-                self.flink_image,
+                self.access_image,
                 "--file",
-                "apps/otel-servicegraph-diff/Dockerfile",
-                *build_arguments,
-                *maven_secret,
-                ".",
-            ],
-            timeout=1800,
-            include_kubeconfig=False,
-        )
-        self.run(
-            [
-                "docker",
-                "build",
-                "--tag",
-                self.ui_image,
-                "--file",
-                "apps/servicegraph-ui/Dockerfile",
+                "apps/servicegraph-access/Dockerfile",
                 *build_arguments,
                 ".",
             ],
@@ -320,171 +302,172 @@ class E2EEnvironment:
             include_kubeconfig=False,
         )
 
-    def _install_redpanda(self) -> None:
-        self.run(
-            ["helm", "repo", "add", "redpanda", "https://charts.redpanda.com", "--force-update"],
-            timeout=120,
-        )
-        self.run(["helm", "repo", "update", "redpanda"], timeout=300)
+    def _start_elasticsearch(self) -> None:
+        port = _free_port()
         self.run(
             [
-                "helm",
-                "upgrade",
-                "--install",
-                "streaming",
-                "redpanda/redpanda",
-                "--version",
-                REDPANDA_CHART_VERSION,
-                "--namespace",
-                self.namespace,
-                "--set",
-                "statefulset.replicas=1",
-                "--set",
-                "statefulset.podAntiAffinity.type=soft",
-                "--set",
-                "console.enabled=false",
-                "--set",
-                "external.enabled=false",
-                "--set",
-                "tls.enabled=false",
-                "--set",
-                "tuning.tune_aio_events=false",
-                "--set",
-                "tests.enabled=false",
-                "--set",
-                "storage.persistentVolume.size=2Gi",
-                "--set",
-                "storage.persistentVolume.storageClass=standard",
-                "--set",
-                "config.cluster.default_topic_replications=1",
-                "--wait",
-                "--timeout",
-                "10m",
+                "docker",
+                "run",
+                "--detach",
+                "--rm",
+                "--name",
+                self.elasticsearch_container,
+                "--network",
+                "kind",
+                "--publish",
+                f"127.0.0.1:{port}:9200",
+                "--env",
+                "discovery.type=single-node",
+                "--env",
+                "xpack.security.enabled=false",
+                "--env",
+                "ES_JAVA_OPTS=-Xms512m -Xmx512m",
+                ELASTICSEARCH_IMAGE,
             ],
-            timeout=660,
+            timeout=180,
+            include_kubeconfig=False,
         )
-        self._create_topic("otel.servicegraph.metrics")
-        self._create_topic("graph.elements.events", cleanup_policy="compact")
+        self.elasticsearch_host_url = f"http://127.0.0.1:{port}"
+        self._expose_container("servicegraph-elasticsearch", self.elasticsearch_container, 9200)
 
-    def _create_topic(self, topic: str, *, cleanup_policy: str | None = None) -> None:
-        command = [
-            "exec",
-            "streaming-0",
-            "-c",
-            "redpanda",
-            "--",
-            "rpk",
-            "-X",
-            "brokers=streaming:9093",
-            "topic",
-            "create",
-            topic,
-        ]
-        if cleanup_policy is not None:
-            command.extend(("--config", f"cleanup.policy={cleanup_policy}"))
-        deadline = time.monotonic() + 120
-        while True:
-            result = self.kubectl(*command, check=False)
-            output = f"{result.stdout}\n{result.stderr}"
-            if result.returncode == 0 or "already exists" in output.casefold():
-                return
-            if time.monotonic() >= deadline:
-                rendered = subprocess.list2cmdline(["kubectl", *command])
-                raise RuntimeError(f"topic creation did not become ready: {rendered}\n{output}")
-            time.sleep(2)
-
-    def _install_project(self) -> None:
+    def _start_redpanda(self) -> None:
+        port = _free_port()
+        internal_host = f"servicegraph-redpanda.{self.namespace}.svc"
         self.run(
             [
-                "helm",
-                "upgrade",
-                "--install",
-                "collection",
-                "deploy/helm/servicegraph-collector",
-                "--namespace",
-                self.namespace,
-                "--set",
-                "fullnameOverride=servicegraph-collector",
-                "--set",
-                "streamContract.kafka.brokers[0]=streaming:9093",
-                "--set",
-                "streamContract.kafka.security.protocol=PLAINTEXT",
-                "--wait",
-                "--timeout",
-                "5m",
+                "docker",
+                "run",
+                "--detach",
+                "--rm",
+                "--name",
+                self.redpanda_container,
+                "--network",
+                "kind",
+                "--publish",
+                f"127.0.0.1:{port}:19092",
+                REDPANDA_IMAGE,
+                "redpanda",
+                "start",
+                "--mode",
+                "dev-container",
+                "--smp",
+                "1",
+                "--memory",
+                "512M",
+                "--reserve-memory",
+                "0M",
+                "--node-id",
+                "0",
+                "--check=false",
+                "--kafka-addr",
+                "internal://0.0.0.0:9092,external://0.0.0.0:19092",
+                "--advertise-kafka-addr",
+                f"internal://{internal_host}:9092,external://127.0.0.1:{port}",
             ],
-            timeout=360,
+            timeout=180,
+            include_kubeconfig=False,
         )
+        self.kafka_host_address = f"127.0.0.1:{port}"
+        self._expose_container("servicegraph-redpanda", self.redpanda_container, 9092)
+        wait_for("Redpanda", 120, self._create_topic)
+
+    def _create_topic(self) -> bool:
+        address = self.kafka_host_address
+        if address is None:
+            return False
+        try:
+            admin = KafkaAdminClient(bootstrap_servers=address, request_timeout_ms=5_000)
+            try:
+                topic = NewTopic(
+                    "graph.elements.events",
+                    1,
+                    1,
+                    topic_configs={"cleanup.policy": "compact"},
+                )
+                admin.create_topics((topic,))
+            finally:
+                admin.close()
+            return True
+        except Exception:
+            return False
+
+    def _expose_container(self, service_name: str, container: str, port: int) -> None:
+        address = self.run(
+            ["docker", "inspect", "--format", "{{(index .NetworkSettings.Networks \"kind\").IPAddress}}", container],
+            timeout=30,
+            include_kubeconfig=False,
+        ).stdout.strip()
+        if not address:
+            raise RuntimeError(f"{container} has no address on the Kind network")
+        self._apply_json(
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {"name": service_name, "namespace": self.namespace},
+                "spec": {"ports": [{"name": "tcp", "port": port, "targetPort": port}]},
+            }
+        )
+        self._apply_json(
+            {
+                "apiVersion": "discovery.k8s.io/v1",
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "name": service_name,
+                    "namespace": self.namespace,
+                    "labels": {"kubernetes.io/service-name": service_name},
+                },
+                "addressType": "IPv4",
+                "ports": [{"name": "tcp", "protocol": "TCP", "port": port}],
+                "endpoints": [{"addresses": [address]}],
+            }
+        )
+
+    def _apply_json(self, manifest: dict[str, object]) -> None:
+        result = subprocess.run(
+            ["kubectl", "apply", "--filename", "-"],
+            cwd=self.root,
+            env=self.command_environment,
+            input=json.dumps(manifest),
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"failed to apply test resource: {result.stdout}{result.stderr}")
+
+    def _install_access(self) -> None:
         self.run(
             [
                 "helm",
                 "upgrade",
                 "--install",
-                "processing",
-                "deploy/helm/servicegraph-flink",
+                "access",
+                "deploy/helm/servicegraph-access",
                 "--namespace",
                 self.namespace,
                 "--set",
-                f"image.ref={self.flink_image}",
+                "fullnameOverride=servicegraph-access",
+                "--set",
+                "image.repository=extended-otel-servicegraph-access",
+                "--set",
+                f"image.tag=e2e-{self.suffix}",
                 "--set",
                 "image.pullPolicy=IfNotPresent",
                 "--set",
-                "application.parallelism=1",
+                "elasticsearch.urls[0]=http://servicegraph-elasticsearch:9200",
                 "--set",
-                "application.jobManagerReplicas=1",
+                "elasticsearch.numberOfReplicas=0",
                 "--set",
-                "application.taskManagerReplicas=1",
+                "elasticsearch.auth.existingSecret=",
                 "--set",
-                "application.taskManagerSlots=1",
+                "elasticsearch.tls.existingSecret=",
                 "--set",
-                "streamContract.kafka.brokers[0]=streaming:9093",
+                "api.elasticsearchPageSize=1",
                 "--set",
-                "streamContract.kafka.security.protocol=PLAINTEXT",
-                "--set",
-                "storage.storageClassName=standard",
-                "--set",
-                "storage.size=2Gi",
-                "--set",
-                "storage.accessModes[0]=ReadWriteOnce",
-                "--set",
-                "podSecurityContext.runAsUser=9999",
-                "--set",
-                "podSecurityContext.runAsGroup=9999",
-                "--set",
-                "podSecurityContext.fsGroup=9999",
-                "--set",
-                "job.interactionTtlSeconds=15",
-                "--set",
-                "job.allowedLatenessSeconds=2",
-                "--set",
-                "job.stateTtlSeconds=60",
-                "--set",
-                "job.checkpointIntervalMs=5000",
-                "--wait",
-                "--timeout",
-                "10m",
-            ],
-            timeout=660,
-        )
-        self.run(
-            [
-                "helm",
-                "upgrade",
-                "--install",
-                "visualization",
-                "deploy/helm/servicegraph-ui",
-                "--namespace",
-                self.namespace,
-                "--set",
-                "fullnameOverride=servicegraph-ui",
-                "--set",
-                f"image.repository={self.ui_repository}",
-                "--set",
-                f"image.tag={self.ui_tag}",
-                "--set",
-                "image.pullPolicy=IfNotPresent",
-                "--set",
-                "streamContract.kafka.brokers[0]=streaming:9093",
+                "streamContract.kafka.brokers[0]=servicegraph-redpanda:9092",
                 "--set",
                 "streamContract.kafka.security.protocol=PLAINTEXT",
                 "--set",
@@ -496,6 +479,10 @@ class E2EEnvironment:
             timeout=360,
         )
 
+    @staticmethod
+    def _announce(message: str) -> None:
+        print(f"[servicegraph-e2e] {message}", flush=True)
+
 
 def wait_for[T](description: str, timeout_seconds: int, probe: Callable[[], T | None | bool]) -> T:
     deadline = time.monotonic() + timeout_seconds
@@ -505,14 +492,22 @@ def wait_for[T](description: str, timeout_seconds: int, probe: Callable[[], T | 
             result = probe()
             if result:
                 return cast(T, result)
-        except (AssertionError, json.JSONDecodeError, OSError, urllib.error.URLError) as exc:
-            last_error = exc
+        except (AssertionError, json.JSONDecodeError, OSError, urllib.error.URLError) as error:
+            last_error = error
         time.sleep(2)
     detail = f": {last_error}" if last_error is not None else ""
     raise AssertionError(f"timed out waiting for {description}{detail}")
 
 
 def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        return int(listener.getsockname()[1])
+
+
+def _serialize_key(value: object) -> bytes:
+    return cast(str, value).encode()
+
+
+def _serialize_event(value: object) -> bytes:
+    return json.dumps(cast(dict[str, object], value), separators=(",", ":")).encode()

@@ -14,7 +14,8 @@ OTLP traces
   -> Kafka: otel.servicegraph.metrics
   -> HA PyFlink graph-element job
   -> Kafka: graph.elements.events
-  -> optional SQLite projection and graph UI
+  -> Elasticsearch current-state projection
+  -> typed query API or Kibana
 ```
 
 The repository contains:
@@ -23,12 +24,14 @@ The repository contains:
   Pydantic entities, OTLP parsing, and pure graph transitions.
 - `apps/otel-servicegraph-diff`: validated settings and PyFlink wiring.
 - `apps/servicegraph-demo`: optional live synthetic OTLP traffic.
-- `apps/servicegraph-ui`: Kafka command projection, API, and graph frontend.
+- `apps/servicegraph-access`: Elasticsearch initialization, Kafka projection,
+  and typed query API.
 - `deploy/helm/servicegraph-collector`: the trace router and service-graph
   backend.
 - `deploy/helm/servicegraph-demo`: the optional traffic generator.
 - `deploy/helm/servicegraph-flink`: the standalone Flink Session runtime.
-- `deploy/helm/servicegraph-ui`: the optional visualization service.
+- `deploy/helm/servicegraph-access`: the Elasticsearch initializer, projector,
+  and query API.
 
 Kafka and topic creation remain external platform concerns. Deployment uses
 Helm only and requires no CRDs or Kubernetes operator.
@@ -62,7 +65,5 @@ python -m pytest -m "not e2e"
 helm lint deploy/helm/servicegraph-collector
 helm lint deploy/helm/servicegraph-demo
 helm lint deploy/helm/servicegraph-flink
-helm lint deploy/helm/servicegraph-ui
-cd apps/servicegraph-ui/frontend
-npm run build
+helm lint deploy/helm/servicegraph-access
 ```

@@ -107,14 +107,16 @@ business.capability.name = order-fulfillment
 
 Rebuild the Flink runtime image because it contains the generated Python package
 and relationship metadata. Upgrade the Collector chart because its generated
-dimensions ConfigMap changed. The generic UI can display new entity and edge
-types without custom frontend code.
+dimensions ConfigMap changed. Rebuild the access image and run the initializer
+against a fresh or intentionally migrated Elasticsearch index because the
+strict generated mapping now contains the custom scalar fields.
 
-After matching traffic is observed, query the UI:
+After matching traffic is observed, query the typed API:
 
 ```console
-curl "http://localhost:8080/api/v1/elements?kind=node&element_type=business.capability"
-curl "http://localhost:8080/api/v1/graph?edge_type=implements"
+curl -X POST http://localhost:8080/api/v1/elements/search \
+  -H "Content-Type: application/json" \
+  -d '{"pattern":{"op":"eq","field":"type","value":"business.capability"}}'
 ```
 
 See [Registry Extensions](../registry-extensions.md) for the complete model and

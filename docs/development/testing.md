@@ -15,8 +15,9 @@ python -m pytest -m "not e2e"
 
 This covers registry validation, generation from YAML through importable Python
 models, semantic graph behavior, Flink state and timer behavior, the demo, and
-the UI projection. PyFlink tests are skipped when `apache-flink` is not
-installed in the active Python 3.12 environment.
+the Elasticsearch initializer, projector, and query API. PyFlink tests are
+skipped when `apache-flink` is not installed in the active Python 3.12
+environment.
 
 Check all generated artifacts together:
 
@@ -36,29 +37,44 @@ python -m pytest -m "not e2e" \
   --cov-report=term-missing
 ```
 
-## Kubernetes lifecycle test
+## Projector lifecycle test
 
 The E2E test requires a running Docker engine plus `kind`, `kubectl`, and Helm.
-It creates a uniquely named Kind cluster, builds the current Flink and UI
-images, installs Redpanda and the project charts, sends deterministic OTLP
-traces, and verifies the complete upsert/delete lifecycle through Kafka and the
-UI API.
+It creates a uniquely named Kind cluster, builds the production access image,
+and installs the access chart. Redpanda and Elasticsearch run as isolated
+Docker containers connected to the Kind network. The test publishes exact
+Flink graph-element lifecycle envelopes and verifies upsert, complete
+replacement, replay, committed Kafka offsets, and deletion in Elasticsearch.
+
+Flink and the Collectors are intentionally excluded from this test. Their
+behavior is covered independently, while this deployment test starts at the
+projector's public Kafka contract and avoids importing the large Flink runtime
+image into Kind.
 
 ```console
 python -m pytest -m e2e --run-e2e
 ```
 
-The cluster, kubeconfig, and temporary image tags are removed after the test.
-Keep them after success or failure when debugging:
+The cluster, Docker containers, kubeconfig, and temporary image tag are removed
+after the test. Keep the complete environment after success or failure when
+debugging:
 
 ```console
 python -m pytest -m e2e --run-e2e --keep-e2e-cluster
 ```
 
-The test honors `PIP_INDEX_URL`, `PIP_TRUSTED_HOST`, and
-`NPM_CONFIG_REGISTRY` during image builds. Set `MAVEN_SETTINGS` to the path of
-an internal Maven settings file when required.
+The test honors `PIP_INDEX_URL` and `PIP_TRUSTED_HOST` during the access image
+build.
 
-This first lifecycle test intentionally does not replace the JobManager or run
-a Helm upgrade. Recovery and upgrade validation remain separate operational
-tests.
+## Elasticsearch integration test
+
+The access foundation has a separate opt-in test that starts Elasticsearch
+8.15.5 directly in Docker. It does not use Testcontainers and is independent
+of the Kind lifecycle test:
+
+```console
+python -m pytest -m elasticsearch --run-elasticsearch
+```
+
+The disposable container uses a 512 MiB heap and is removed automatically.
+On failure, its bounded logs are included in pytest output.

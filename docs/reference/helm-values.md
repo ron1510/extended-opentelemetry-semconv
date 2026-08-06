@@ -53,20 +53,22 @@ also available in the chart.
 Kafka security fields and both topic names must match the Collector and
 consumers.
 
-## UI
+## Elasticsearch access
 
 | Path | Default | Purpose |
 | --- | --- | --- |
-| `image.repository` | internal example | UI image |
-| `image.tag` | `0.1.2` | UI tag |
-| `service.type` | `ClusterIP` | HTTP Service type |
-| `service.port` | `8080` | HTTP Service port |
-| `consumer.groupId` | `servicegraph-elements-ui` | Kafka group |
-| `consumer.recentEventLimit` | `1000` | Retained event history |
-| `storage.storageClassName` | `standard` | SQLite storage class |
-| `storage.size` | `2Gi` | SQLite claim size |
-| `storage.accessModes` | `[ReadWriteOnce]` | SQLite claim access |
-| `storage.retainClaim` | `true` | Keep claim on uninstall |
+| `image.repository` | internal example | Access image |
+| `image.tag` | `0.3.0` | Access image tag |
+| `projector.replicas` | `1` | Kafka projector replicas |
+| `projector.groupId` | `servicegraph-elasticsearch-projector` | Kafka group |
+| `api.replicas` | `1` | Query API replicas |
+| `api.port` | `8080` | Internal HTTP port |
+| `api.elasticsearchPageSize` | `1000` | Internal PIT page size |
+| `elasticsearch.urls` | internal example | Elasticsearch endpoints |
+| `elasticsearch.indexName` | `servicegraph-elements` | Projection index |
+| `elasticsearch.numberOfShards` | `1` | Primary shards at creation |
+| `elasticsearch.numberOfReplicas` | `1` | Replica shards |
+| `elasticsearch.refreshInterval` | `5s` | Index refresh interval |
 
 ## Demo
 
@@ -88,6 +90,6 @@ consumers.
 ```console
 helm show values deploy/helm/servicegraph-collector
 helm show values deploy/helm/servicegraph-flink
-helm show values deploy/helm/servicegraph-ui
+helm show values deploy/helm/servicegraph-access
 helm show values deploy/helm/servicegraph-demo
 ```

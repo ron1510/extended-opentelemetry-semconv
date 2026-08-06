@@ -1,0 +1,320 @@
+{
+  "mappings": {
+    "_meta": {
+      "mapping_hash": "dff20ba152b7e81d2f6dc19e3b7190ede7e6de9602a9d733dbbd5d6883f868e9",
+      "schema_version": "1",
+      "upstream_registry_lock_sha256": "390b6d025d5bdf1d23b8f520f77c2495c1bdb941538c45ee55e4d1af7cc2f2b0"
+    },
+    "dynamic": "strict",
+    "properties": {
+      "attributes": {
+        "dynamic": "strict",
+        "properties": {
+          "container.runtime.description": {
+            "type": "keyword"
+          },
+          "container.runtime.name": {
+            "type": "keyword"
+          },
+          "container.runtime.version": {
+            "type": "keyword"
+          },
+          "http.request.method": {
+            "type": "keyword"
+          },
+          "http.route": {
+            "type": "keyword"
+          },
+          "k8s.cluster.name": {
+            "type": "keyword"
+          },
+          "k8s.cluster.uid": {
+            "type": "keyword"
+          },
+          "k8s.container.name": {
+            "type": "keyword"
+          },
+          "k8s.container.restart_count": {
+            "coerce": false,
+            "type": "long"
+          },
+          "k8s.container.status.last_terminated_reason": {
+            "type": "keyword"
+          },
+          "k8s.cronjob.name": {
+            "type": "keyword"
+          },
+          "k8s.cronjob.uid": {
+            "type": "keyword"
+          },
+          "k8s.daemonset.name": {
+            "type": "keyword"
+          },
+          "k8s.daemonset.uid": {
+            "type": "keyword"
+          },
+          "k8s.deployment.name": {
+            "type": "keyword"
+          },
+          "k8s.deployment.uid": {
+            "type": "keyword"
+          },
+          "k8s.hpa.name": {
+            "type": "keyword"
+          },
+          "k8s.hpa.scaletargetref.api_version": {
+            "type": "keyword"
+          },
+          "k8s.hpa.scaletargetref.kind": {
+            "type": "keyword"
+          },
+          "k8s.hpa.scaletargetref.name": {
+            "type": "keyword"
+          },
+          "k8s.hpa.uid": {
+            "type": "keyword"
+          },
+          "k8s.job.name": {
+            "type": "keyword"
+          },
+          "k8s.job.uid": {
+            "type": "keyword"
+          },
+          "k8s.namespace.name": {
+            "type": "keyword"
+          },
+          "k8s.node.name": {
+            "type": "keyword"
+          },
+          "k8s.node.uid": {
+            "type": "keyword"
+          },
+          "k8s.persistentvolume.name": {
+            "type": "keyword"
+          },
+          "k8s.persistentvolume.reclaim_policy": {
+            "type": "keyword"
+          },
+          "k8s.persistentvolume.uid": {
+            "type": "keyword"
+          },
+          "k8s.persistentvolumeclaim.name": {
+            "type": "keyword"
+          },
+          "k8s.persistentvolumeclaim.uid": {
+            "type": "keyword"
+          },
+          "k8s.pod.hostname": {
+            "type": "keyword"
+          },
+          "k8s.pod.ip": {
+            "type": "keyword"
+          },
+          "k8s.pod.name": {
+            "type": "keyword"
+          },
+          "k8s.pod.start_time": {
+            "type": "keyword"
+          },
+          "k8s.pod.uid": {
+            "type": "keyword"
+          },
+          "k8s.replicaset.name": {
+            "type": "keyword"
+          },
+          "k8s.replicaset.uid": {
+            "type": "keyword"
+          },
+          "k8s.replicationcontroller.name": {
+            "type": "keyword"
+          },
+          "k8s.replicationcontroller.uid": {
+            "type": "keyword"
+          },
+          "k8s.resourcequota.name": {
+            "type": "keyword"
+          },
+          "k8s.resourcequota.uid": {
+            "type": "keyword"
+          },
+          "k8s.service.name": {
+            "type": "keyword"
+          },
+          "k8s.service.publish_not_ready_addresses": {
+            "type": "boolean"
+          },
+          "k8s.service.traffic_distribution": {
+            "type": "keyword"
+          },
+          "k8s.service.type": {
+            "type": "keyword"
+          },
+          "k8s.service.uid": {
+            "type": "keyword"
+          },
+          "k8s.statefulset.name": {
+            "type": "keyword"
+          },
+          "k8s.statefulset.uid": {
+            "type": "keyword"
+          },
+          "k8s.storageclass.name": {
+            "type": "keyword"
+          },
+          "process.args_count": {
+            "coerce": false,
+            "type": "long"
+          },
+          "process.command": {
+            "type": "keyword"
+          },
+          "process.command_line": {
+            "type": "keyword"
+          },
+          "process.creation.time": {
+            "type": "keyword"
+          },
+          "process.executable.build_id.gnu": {
+            "type": "keyword"
+          },
+          "process.executable.build_id.go": {
+            "type": "keyword"
+          },
+          "process.executable.build_id.htlhash": {
+            "type": "keyword"
+          },
+          "process.executable.name": {
+            "type": "keyword"
+          },
+          "process.executable.path": {
+            "type": "keyword"
+          },
+          "process.interactive": {
+            "type": "boolean"
+          },
+          "process.linux.cgroup": {
+            "type": "keyword"
+          },
+          "process.owner": {
+            "type": "keyword"
+          },
+          "process.parent_pid": {
+            "coerce": false,
+            "type": "long"
+          },
+          "process.pid": {
+            "coerce": false,
+            "type": "long"
+          },
+          "process.runtime.description": {
+            "type": "keyword"
+          },
+          "process.runtime.name": {
+            "type": "keyword"
+          },
+          "process.runtime.version": {
+            "type": "keyword"
+          },
+          "process.title": {
+            "type": "keyword"
+          },
+          "process.working_directory": {
+            "type": "keyword"
+          },
+          "service.criticality": {
+            "type": "keyword"
+          },
+          "service.instance.id": {
+            "type": "keyword"
+          },
+          "service.name": {
+            "type": "keyword"
+          },
+          "service.namespace": {
+            "type": "keyword"
+          },
+          "service.version": {
+            "type": "keyword"
+          },
+          "telemetry.distro.name": {
+            "type": "keyword"
+          },
+          "telemetry.distro.version": {
+            "type": "keyword"
+          },
+          "telemetry.sdk.language": {
+            "type": "keyword"
+          },
+          "telemetry.sdk.name": {
+            "type": "keyword"
+          },
+          "telemetry.sdk.version": {
+            "type": "keyword"
+          },
+          "vcs.ref.head.name": {
+            "type": "keyword"
+          },
+          "vcs.ref.head.revision": {
+            "type": "keyword"
+          },
+          "vcs.ref.type": {
+            "type": "keyword"
+          },
+          "vcs.repository.name": {
+            "type": "keyword"
+          },
+          "vcs.repository.url.full": {
+            "type": "keyword"
+          }
+        },
+        "subobjects": false
+      },
+      "emitted_at_unix_ms": {
+        "coerce": false,
+        "type": "long"
+      },
+      "event_id": {
+        "type": "keyword"
+      },
+      "id": {
+        "type": "keyword"
+      },
+      "kind": {
+        "type": "keyword"
+      },
+      "metrics": {
+        "dynamic": "strict",
+        "properties": {
+          "service_graph.request.failed.total": {
+            "coerce": false,
+            "type": "double"
+          },
+          "service_graph.request.total": {
+            "coerce": false,
+            "type": "double"
+          }
+        },
+        "subobjects": false
+      },
+      "observed_at_unix_nano": {
+        "coerce": false,
+        "type": "long"
+      },
+      "payload_hash": {
+        "type": "keyword"
+      },
+      "schema_version": {
+        "type": "keyword"
+      },
+      "source_id": {
+        "type": "keyword"
+      },
+      "target_id": {
+        "type": "keyword"
+      },
+      "type": {
+        "type": "keyword"
+      }
+    }
+  }
+}

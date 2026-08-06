@@ -36,7 +36,7 @@ Track:
 - input and output topic write rates;
 - partition availability and under-replication;
 - Flink consumer-group lag;
-- UI projection lag;
+- Elasticsearch projector consumer-group lag;
 - broker request latency and rejected writes;
 - topic retention relative to recovery time.
 
@@ -68,22 +68,20 @@ kubectl port-forward -n servicegraph-system \
 The job must remain `RUNNING`, and completed checkpoints must continue to
 increase while traffic is present.
 
-## UI
+## Elasticsearch access
 
 Check:
 
 ```console
-curl http://servicegraph-ui:8080/health/live
-curl http://servicegraph-ui:8080/health/ready
-curl http://servicegraph-ui:8080/api/v1/status
+curl http://servicegraph-access-api:8080/health/live
+curl http://servicegraph-access-api:8080/health/ready
+curl http://elasticsearch:9200/servicegraph-elements/_count
 ```
 
-Readiness fails when its Kafka consumer is not running. Status reports the last
-event time and projection counts. Compare the consumer's position with the
-output topic end offset when the graph appears stale.
-
-Monitor SQLite PVC capacity. The current graph, recent-event history, and
-source offsets share that database.
+API readiness fails when Elasticsearch or the index is unavailable. Compare
+the projector consumer-group position with the output topic end offset when
+the index appears stale. Monitor Elasticsearch cluster health, rejected bulk
+requests, index size, shard allocation, and query latency.
 
 ## End-to-end canary
 
@@ -107,6 +105,7 @@ Alert on:
 - repeated Collector export failures;
 - Collector or TaskManager restart loops;
 - `rejected_records` increasing;
-- state or SQLite volume nearing capacity;
-- UI readiness failure;
+- Flink state or Elasticsearch storage nearing capacity;
+- API readiness failure;
+- projector restarts or sustained consumer lag;
 - no output events while input activity is present.

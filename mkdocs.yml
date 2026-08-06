@@ -63,17 +63,17 @@ nav:
       - Registry Extensions: registry-extensions.md
       - Collector: configuration/collector.md
       - Flink Job: configuration/flink.md
-      - UI and Demo: configuration/ui-demo.md
+      - Demo Traffic: configuration/demo.md
   - Deployment:
       - Kubernetes: deployment-and-operations.md
       - Local Kind Environment: deployment/local-kind.md
+      - Elasticsearch Foundation: deployment/elasticsearch.md
   - Operations:
       - Monitoring: operations/monitoring.md
       - Upgrades and Recovery: operations/upgrades.md
       - Troubleshooting: operations/troubleshooting.md
   - Reference:
       - Graph Element Event Schema: reference/event-schema.md
-      - UI HTTP API: reference/ui-api.md
       - Helm Values: reference/helm-values.md
   - Development:
       - Repository Development: development.md
