@@ -1,80 +1,60 @@
 # Testing
 
-The repository has fast unit and component tests plus one opt-in Kubernetes
-lifecycle test. Tests require CPython 3.12; other interpreter versions are not
-supported by the project packages.
+The repository has fast unit/component tests and an opt-in Kubernetes lifecycle
+test. Use CPython 3.12.
 
 ## Fast suite
 
-Install the repository packages and development dependencies as described in
-[Repository Development](../development.md), then run:
-
 ```console
 python -m pytest -m "not e2e"
-```
-
-This covers registry validation, generation from YAML through importable Python
-models, semantic graph behavior, Flink state and timer behavior, the demo, and
-the Elasticsearch initializer, projector, and query API. PyFlink tests are
-skipped when `apache-flink` is not installed in the active Python 3.12
-environment.
-
-Check all generated artifacts together:
-
-```console
 python -m extended_otel_semconv.codegen --check
+python -m ruff check .
+python -m pyright
 ```
 
-Generate an optional branch-coverage report without enforcing an arbitrary
-percentage:
+The suite covers registry validation, deterministic generation, importable
+models, graph lifecycle behavior, Flink state/timers, demo traffic, ArangoDB
+topology initialization, document routing, edge-delete fanout, Kafka security,
+and commit-after-write behavior. PyFlink tests skip when `apache-flink` is not
+installed in the active environment.
+
+Optional branch coverage has no numeric gate:
 
 ```console
-python -m pytest -m "not e2e" \
-  --cov=extended_otel_semconv.codegen \
-  --cov=extended_otel_semconv.registry \
-  --cov=otel_servicegraph_diff \
-  --cov-branch \
-  --cov-report=term-missing
+python -m pytest -m "not e2e" --cov --cov-branch --cov-report=term-missing
 ```
 
-## Projector lifecycle test
+## ArangoDB/Gremlin lifecycle test
 
-The E2E test requires a running Docker engine plus `kind`, `kubectl`, and Helm.
-It creates a uniquely named Kind cluster, builds the production access image,
-and installs the access chart. Redpanda and Elasticsearch run as isolated
-Docker containers connected to the Kind network. The test publishes exact
-Flink graph-element lifecycle envelopes and verifies upsert, complete
-replacement, replay, committed Kafka offsets, and deletion in Elasticsearch.
+The opt-in test needs Docker, Kind, `kubectl`, and Helm. It creates a uniquely
+named Kind cluster, starts pinned Redpanda and ArangoDB containers on Kind's
+Docker network, builds the production indexer and validated Gremlin images, and
+installs both charts.
 
-Flink and the Collectors are intentionally excluded from this test. Their
-behavior is covered independently, while this deployment test starts at the
-projector's public Kafka contract and avoids importing the large Flink runtime
-image into Kind.
+It publishes exact Flink schema-2 lifecycle envelopes and verifies:
+
+- node and edge projection;
+- incoming and outgoing GraphBinary traversals;
+- complete replacement and duplicate replay;
+- Kafka offset commits after database writes;
+- read-only mutation rejection;
+- graph persistence across indexer and Gremlin pod replacement;
+- node and edge deletion.
+
+Flink and the Collectors are deliberately outside this focused deployment test.
+Their behavior is covered by the Flink and semantic package tests; this test
+starts at Flink's public Kafka contract so access-layer iteration stays fast.
 
 ```console
 python -m pytest -m e2e --run-e2e
 ```
 
-The cluster, Docker containers, kubeconfig, and temporary image tag are removed
-after the test. Keep the complete environment after success or failure when
-debugging:
+Cleanup removes the cluster, containers, kubeconfig, and temporary images.
+Preserve them for debugging with:
 
 ```console
 python -m pytest -m e2e --run-e2e --keep-e2e-cluster
 ```
 
-The test honors `PIP_INDEX_URL` and `PIP_TRUSTED_HOST` during the access image
-build.
-
-## Elasticsearch integration test
-
-The access foundation has a separate opt-in test that starts Elasticsearch
-8.15.5 directly in Docker. It does not use Testcontainers and is independent
-of the Kind lifecycle test:
-
-```console
-python -m pytest -m elasticsearch --run-elasticsearch
-```
-
-The disposable container uses a 512 MiB heap and is removed automatically.
-On failure, its bounded logs are included in pytest output.
+Image builds honor `PIP_INDEX_URL`, `PIP_TRUSTED_HOST`,
+`TINKERPOP_SERVER_URL`, and `MAVEN_REPOSITORY_URL`.

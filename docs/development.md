@@ -11,7 +11,7 @@ python -m pip install -e ".[dev,docs]"
 python -m pip install -e packages/extended-opentelemetry-semconv
 python -m pip install -e services/otel-servicegraph-diff
 python -m pip install -e services/servicegraph-demo
-python -m pip install -e services/servicegraph-access
+python -m pip install -e services/servicegraph-indexer
 ```
 
 The PyFlink package is large. For package-only changes, install only the
@@ -39,12 +39,14 @@ python -m pytest -m "not e2e"
 helm lint deploy/helm/servicegraph-collector
 helm lint deploy/helm/servicegraph-demo
 helm lint deploy/helm/servicegraph-flink
-helm lint deploy/helm/servicegraph-access
+helm lint deploy/helm/servicegraph-arangodb
+helm lint deploy/helm/servicegraph-indexer
+helm lint deploy/helm/servicegraph-gremlin
 ```
 
 Tests focus on registry validation, generated artifacts, pure interaction
-transitions, Flink timers, demo topology, Elasticsearch projection, and typed
-query translation.
+transitions, Flink timers, demo topology, generated ArangoDB topology, native
+projection, and Gremlin traversal behavior.
 
 ## Documentation
 

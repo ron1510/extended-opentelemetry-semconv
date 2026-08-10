@@ -22,14 +22,17 @@ from extended_otel_semconv.codegen import (
     _finalize,
     _generated_entity,
     _identifying_refs,
-    _mapping_hash,
+    _property_aliases,
     _python_type,
+    _render_arangodb_schema,
     _render_collector_dimensions,
     _render_domain_module,
     _render_domain_parser,
-    _render_elasticsearch_mapping,
     _render_package_init,
     _render_relationship_metadata,
+    _safe_arangodb_name,
+    _schema_hash,
+    _unique_sanitized_names,
     _value_reader,
     check_files,
     generate_files,
@@ -99,14 +102,17 @@ def test_default_paths_cover_every_generated_artifact(tmp_path: Path) -> None:
     assert paths.collector_dimensions == (
         tmp_path / "deploy" / "helm" / "servicegraph-collector" / "files" / "dimensions.yaml"
     )
-    assert paths.elasticsearch_mapping == (
+    assert paths.arangodb_schema == (
         tmp_path
         / "packages"
         / "extended-opentelemetry-semconv"
         / "src"
         / "extended_otel_semconv"
         / "metadata"
-        / "elasticsearch-graph-elements-index.json"
+        / "arangodb-graph-schema.json"
+    )
+    assert paths.gremlin_schema == (
+        tmp_path / "deploy" / "helm" / "servicegraph-gremlin" / "files" / "arangodb-graph-schema.json"
     )
 
 
@@ -207,55 +213,84 @@ def test_metadata_renderers_filter_relationships_and_dimensions() -> None:
     assert dimensions == {"dimensions": ["service.name"]}
 
 
-def test_elasticsearch_mapping_uses_registry_scalar_types_and_literal_dotted_fields(tmp_path: Path) -> None:
+def test_arangodb_schema_uses_registry_topology_aliases_and_identity_fields(tmp_path: Path) -> None:
     paths, _ = _generation_fixture(tmp_path)
     upstream = codegen.load_model_registry(paths.upstream_model)
     extension = codegen.load_model_registry(paths.extension_model)
     registry = codegen._merged_registry(upstream, extension)
 
-    rendered = json.loads(_render_elasticsearch_mapping(registry, paths.upstream_lock))
-    mappings = rendered["mappings"]
-    attributes = mappings["properties"]["attributes"]
+    schema = json.loads(_render_arangodb_schema(registry, paths.upstream_lock))
 
-    assert mappings["dynamic"] == "strict"
-    assert attributes["dynamic"] == "strict"
-    assert attributes["subobjects"] is False
-    assert attributes["properties"] == {
-        "custom.rank": {"coerce": False, "type": "long"},
-        "endpoint.enabled": {"type": "boolean"},
-        "endpoint.retry_count": {"coerce": False, "type": "long"},
-        "http.request.method": {"type": "keyword"},
-        "http.route": {"type": "keyword"},
-        "service.name": {"type": "keyword"},
+    assert schema["graph_name"] == "servicegraph"
+    assert schema["property_aliases"]["attributes"] == {
+        "custom.rank": "custom_rank",
+        "endpoint.enabled": "endpoint_enabled",
+        "endpoint.retry_count": "endpoint_retry_count",
+        "http.request.method": "http_request_method",
+        "http.route": "http_route",
+        "service.name": "service_name",
     }
-    metrics = mappings["properties"]["metrics"]
-    assert metrics["dynamic"] == "strict"
-    assert metrics["subobjects"] is False
-    mapping_hash = mappings["_meta"].pop("mapping_hash")
-    assert mapping_hash == _mapping_hash(mappings)
+    assert schema["property_aliases"]["metrics"] == {
+        "service_graph.request.failed.total": "service_graph_request_failed_total",
+        "service_graph.request.total": "service_graph_request_total",
+    }
+    assert schema["vertex_collections"] == [
+        {
+            "collection": "app_endpoint",
+            "identifying_properties": [
+                {"attribute": "service.name", "property": "service_name"},
+                {"attribute": "http.request.method", "property": "http_request_method"},
+                {"attribute": "http.route", "property": "http_route"},
+            ],
+            "semantic_type": "app.endpoint",
+        },
+        {
+            "collection": "service",
+            "identifying_properties": [{"attribute": "service.name", "property": "service_name"}],
+            "semantic_type": "service",
+        },
+    ]
+    assert schema["edge_collections"] == [
+        {"collection": "exposes", "from": ["service"], "semantic_type": "exposes", "to": ["app_endpoint"]}
+    ]
+    schema_hash = schema["_meta"].pop("schema_hash")
+    assert schema_hash == _schema_hash(schema)
 
 
-def test_real_elasticsearch_mapping_contains_every_service_graph_dimension_once() -> None:
+def test_real_arangodb_schema_contains_every_graph_type_and_dimension_once() -> None:
     paths = codegen.default_generation_paths()
     upstream = codegen.load_model_registry(paths.upstream_model)
     extension = codegen.load_model_registry(paths.extension_model)
     registry = codegen._merged_registry(upstream, extension)
     dimensions = codegen.service_graph_dimensions(registry)
-    document = json.loads(_render_elasticsearch_mapping(registry, paths.upstream_lock))
-    attributes = document["mappings"]["properties"]["attributes"]["properties"]
+    document = json.loads(_render_arangodb_schema(registry, paths.upstream_lock))
+    attributes = document["property_aliases"]["attributes"]
 
     assert len(dimensions) == 84
     assert tuple(attributes) == tuple(sorted(dimensions))
     assert len(attributes) == len(set(attributes))
     assert not any(name.endswith((".label", ".annotation", ".selector")) for name in attributes)
-    registry_types = [registry.attributes_by_id[name].type for name in dimensions]
-    assert sum(item == "string" for item in registry_types) == 72
-    assert sum(isinstance(item, dict) and "members" in item for item in registry_types) == 6
-    assert sum(item == "int" for item in registry_types) == 4
-    assert sum(item == "boolean" for item in registry_types) == 2
-    assert sum(field == {"type": "keyword"} for field in attributes.values()) == 78
-    assert sum(field == {"type": "long", "coerce": False} for field in attributes.values()) == 4
-    assert sum(field == {"type": "boolean"} for field in attributes.values()) == 2
+    assert len(document["vertex_collections"]) == 29
+    assert len(document["edge_collections"]) == 9
+    assert {item["semantic_type"] for item in document["vertex_collections"]} == codegen.service_graph_entity_names(
+        registry
+    )
+    assert {item["semantic_type"] for item in document["edge_collections"]} == {
+        relationship.name
+        for relationship in registry.relationships_by_id.values()
+        if "service_graph" in relationship.source_signals
+    }
+
+
+def test_arangodb_names_and_aliases_reject_collisions() -> None:
+    assert _safe_arangodb_name("k8s.pod") == "k8s_pod"
+    assert _safe_arangodb_name("service.instance") == "service_instance"
+    with pytest.raises(ValueError, match="cannot be converted"):
+        _safe_arangodb_name("123")
+    with pytest.raises(ValueError, match="vertex collection collision"):
+        _unique_sanitized_names(("app.endpoint", "app-endpoint"), "vertex collection")
+    with pytest.raises(ValueError, match="reserved field"):
+        _property_aliases(("element.id",))
 
 
 def test_write_and_check_files_manage_stale_modules(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -292,7 +327,8 @@ def test_main_writes_and_checks_all_artifacts(
     assert paths.package_lock.exists()
     assert paths.relationship_metadata.exists()
     assert paths.collector_dimensions.exists()
-    assert paths.elasticsearch_mapping.exists()
+    assert paths.arangodb_schema.exists()
+    assert paths.gremlin_schema.read_text(encoding="utf-8") == paths.arangodb_schema.read_text(encoding="utf-8")
     assert codegen.main(["--check"]) == 0
 
     paths.collector_dimensions.write_text("stale\n", encoding="utf-8")
@@ -301,10 +337,10 @@ def test_main_writes_and_checks_all_artifacts(
     assert "dimensions.yaml is not up to date" in capsys.readouterr().out
 
     codegen.main([])
-    paths.elasticsearch_mapping.write_text("{}\n", encoding="utf-8")
+    paths.arangodb_schema.write_text("{}\n", encoding="utf-8")
 
     assert codegen.main(["--check"]) == 1
-    assert "elasticsearch-graph-elements-index.json is not up to date" in capsys.readouterr().out
+    assert "arangodb-graph-schema.json is not up to date" in capsys.readouterr().out
 
 
 def test_yaml_to_importable_models_and_all_generated_artifacts(tmp_path: Path) -> None:
@@ -330,8 +366,8 @@ def test_yaml_to_importable_models_and_all_generated_artifacts(tmp_path: Path) -
             "service.name",
         ]
     }
-    mapping = json.loads(paths.elasticsearch_mapping.read_text(encoding="utf-8"))
-    assert mapping["mappings"]["_meta"]["schema_version"] == "1"
+    schema = json.loads(paths.arangodb_schema.read_text(encoding="utf-8"))
+    assert schema["_meta"]["schema_version"] == "1"
 
     compile_result = subprocess.run(
         [sys.executable, "-m", "compileall", "-q", str(source_root)],
@@ -462,7 +498,8 @@ groups:
             package_lock=package_dir / "metadata" / "lock.json",
             relationship_metadata=package_dir / "metadata" / "relationships.json",
             collector_dimensions=tmp_path / "collector" / "dimensions.yaml",
-            elasticsearch_mapping=package_dir / "metadata" / "elasticsearch-graph-elements-index.json",
+            arangodb_schema=package_dir / "metadata" / "arangodb-graph-schema.json",
+            gremlin_schema=tmp_path / "gremlin" / "arangodb-graph-schema.json",
         ),
         source_root,
     )

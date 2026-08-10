@@ -32,7 +32,7 @@ multiple independent producers are intentional.
 
 When an edge rotates out, the demo simply stops sending it. Flink emits delete
 events after `interactionTtlSeconds`; the generator never writes Kafka events
-or changes Elasticsearch directly.
+or changes ArangoDB directly.
 
 For a visible lifecycle demonstration, make the time before a retired edge can
 return longer than the Flink interaction TTL.

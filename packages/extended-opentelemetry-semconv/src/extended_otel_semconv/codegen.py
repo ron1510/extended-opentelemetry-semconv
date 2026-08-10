@@ -13,7 +13,7 @@ from typing import NamedTuple
 
 import yaml
 
-from extended_otel_semconv.graph.dimensions import service_graph_dimensions
+from extended_otel_semconv.graph.dimensions import service_graph_dimensions, service_graph_entity_names
 from extended_otel_semconv.graph.elements import GRAPH_REQUEST_FAILED_TOTAL, GRAPH_REQUEST_TOTAL
 from extended_otel_semconv.registry.model import (
     AttributeDefinition,
@@ -25,7 +25,25 @@ from extended_otel_semconv.registry.model import (
 from extended_otel_semconv.registry.validation import load_model_registry, validate_extension_model
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-ELASTICSEARCH_MAPPING_SCHEMA_VERSION = "1"
+ARANGODB_SCHEMA_VERSION = "1"
+ARANGODB_RESERVED_PROPERTIES = frozenset(
+    {
+        "_key",
+        "_id",
+        "_rev",
+        "_from",
+        "_to",
+        "attributes",
+        "metrics",
+        "element_id",
+        "semantic_type",
+        "schema_version",
+        "event_id",
+        "payload_hash",
+        "observed_at_unix_nano",
+        "emitted_at_unix_ms",
+    }
+)
 
 
 class GenerationPaths(NamedTuple):
@@ -36,7 +54,8 @@ class GenerationPaths(NamedTuple):
     package_lock: Path
     relationship_metadata: Path
     collector_dimensions: Path
-    elasticsearch_mapping: Path
+    arangodb_schema: Path
+    gremlin_schema: Path
 
 
 class GeneratedEntity(NamedTuple):
@@ -58,7 +77,8 @@ def default_generation_paths(root: Path = REPOSITORY_ROOT) -> GenerationPaths:
         package_lock=package / "metadata" / "otel-semconv.lock.json",
         relationship_metadata=package / "metadata" / "service-graph-relationships.json",
         collector_dimensions=root / "deploy" / "helm" / "servicegraph-collector" / "files" / "dimensions.yaml",
-        elasticsearch_mapping=package / "metadata" / "elasticsearch-graph-elements-index.json",
+        arangodb_schema=package / "metadata" / "arangodb-graph-schema.json",
+        gremlin_schema=root / "deploy" / "helm" / "servicegraph-gremlin" / "files" / "arangodb-graph-schema.json",
     )
 
 
@@ -95,11 +115,12 @@ def generate_files(paths: GenerationPaths) -> dict[Path, str]:
         paths.package_lock: paths.upstream_lock.read_text(encoding="utf-8"),
         paths.relationship_metadata: _render_relationship_metadata(relationships),
         paths.collector_dimensions: _render_collector_dimensions(registry),
-        paths.elasticsearch_mapping: _render_elasticsearch_mapping(registry, paths.upstream_lock),
+        paths.arangodb_schema: _render_arangodb_schema(registry, paths.upstream_lock),
     }
     for domain in domains:
         domain_entities = tuple(entity for entity in generated_entities if entity.domain == domain)
         files[paths.generated_dir / f"{domain}.py"] = _render_domain_module(domain_entities, attributes)
+    files[paths.gremlin_schema] = files[paths.arangodb_schema]
     return files
 
 
@@ -300,66 +321,100 @@ def _render_collector_dimensions(registry: RegistryDocument) -> str:
     )
 
 
-def _render_elasticsearch_mapping(registry: RegistryDocument, upstream_lock: Path) -> str:
-    attributes = {
-        dimension: _elasticsearch_field_mapping(registry.attributes_by_id[dimension])
-        for dimension in service_graph_dimensions(registry)
-    }
-    mappings: dict[str, object] = {
+def _render_arangodb_schema(registry: RegistryDocument, upstream_lock: Path) -> str:
+    entity_names = sorted(service_graph_entity_names(registry))
+    collections = _unique_sanitized_names(entity_names, "vertex collection")
+    relationships = [
+        relationship
+        for relationship in registry.relationships_by_id.values()
+        if "service_graph" in relationship.source_signals
+    ]
+    relationship_names = sorted({relationship.name for relationship in relationships})
+    edge_collections = _unique_sanitized_names(relationship_names, "edge collection")
+
+    canonical_properties = (*service_graph_dimensions(registry), GRAPH_REQUEST_FAILED_TOTAL, GRAPH_REQUEST_TOTAL)
+    aliases = _property_aliases(canonical_properties)
+    vertices: list[dict[str, object]] = []
+    for entity_name in entity_names:
+        entity = registry.entities_by_name[entity_name]
+        identifying = [
+            {"attribute": ref.ref, "property": aliases[ref.ref]}
+            for ref in _identifying_refs(entity)
+            if ref.ref in aliases
+        ]
+        vertices.append(
+            {
+                "semantic_type": entity_name,
+                "collection": collections[entity_name],
+                "identifying_properties": identifying,
+            }
+        )
+
+    edges: list[dict[str, object]] = []
+    for name in relationship_names:
+        matching = [relationship for relationship in relationships if relationship.name == name]
+        edges.append(
+            {
+                "semantic_type": name,
+                "collection": edge_collections[name],
+                "from": sorted({collections[item.source_entity] for item in matching}),
+                "to": sorted({collections[item.target_entity] for item in matching}),
+            }
+        )
+
+    schema: dict[str, object] = {
         "_meta": {
-            "schema_version": ELASTICSEARCH_MAPPING_SCHEMA_VERSION,
+            "schema_version": ARANGODB_SCHEMA_VERSION,
             "upstream_registry_lock_sha256": hashlib.sha256(upstream_lock.read_bytes()).hexdigest(),
         },
-        "dynamic": "strict",
-        "properties": {
-            "schema_version": {"type": "keyword"},
-            "event_id": {"type": "keyword"},
-            "payload_hash": {"type": "keyword"},
-            "id": {"type": "keyword"},
-            "kind": {"type": "keyword"},
-            "type": {"type": "keyword"},
-            "source_id": {"type": "keyword"},
-            "target_id": {"type": "keyword"},
-            "attributes": {
-                "dynamic": "strict",
-                "subobjects": False,
-                "properties": attributes,
-            },
+        "graph_name": "servicegraph",
+        "vertex_collections": vertices,
+        "edge_collections": edges,
+        "property_aliases": {
+            "attributes": {name: aliases[name] for name in service_graph_dimensions(registry)},
             "metrics": {
-                "dynamic": "strict",
-                "subobjects": False,
-                "properties": {
-                    GRAPH_REQUEST_FAILED_TOTAL: {"type": "double", "coerce": False},
-                    GRAPH_REQUEST_TOTAL: {"type": "double", "coerce": False},
-                },
+                GRAPH_REQUEST_FAILED_TOTAL: aliases[GRAPH_REQUEST_FAILED_TOTAL],
+                GRAPH_REQUEST_TOTAL: aliases[GRAPH_REQUEST_TOTAL],
             },
-            "observed_at_unix_nano": {"type": "long", "coerce": False},
-            "emitted_at_unix_ms": {"type": "long", "coerce": False},
         },
+        "reserved_properties": sorted(ARANGODB_RESERVED_PROPERTIES),
     }
-    metadata = mappings["_meta"]
+    metadata = schema["_meta"]
     assert isinstance(metadata, dict)
-    metadata["mapping_hash"] = _mapping_hash(mappings)
-    return json.dumps({"mappings": mappings}, indent=2, sort_keys=True) + "\n"
+    metadata["schema_hash"] = _schema_hash(schema)
+    return json.dumps(schema, indent=2, sort_keys=True) + "\n"
 
 
-def _elasticsearch_field_mapping(attribute: AttributeDefinition) -> dict[str, object]:
-    attribute_type = attribute.type
-    if isinstance(attribute_type, dict) and "members" in attribute_type:
-        return {"type": "keyword"}
-    if attribute_type == "string":
-        return {"type": "keyword"}
-    if attribute_type == "int":
-        return {"type": "long", "coerce": False}
-    if attribute_type == "boolean":
-        return {"type": "boolean"}
-    if attribute_type == "double":
-        return {"type": "double", "coerce": False}
-    raise ValueError(f"unsupported Elasticsearch field type for {attribute.id}: {attribute_type!r}")
+def _safe_arangodb_name(value: str) -> str:
+    name = re.sub(r"[^0-9a-zA-Z]+", "_", value).strip("_").lower()
+    if not name or name[0].isdigit():
+        raise ValueError(f"{value!r} cannot be converted to a valid ArangoDB name")
+    return name
 
 
-def _mapping_hash(mappings: dict[str, object]) -> str:
-    canonical = json.dumps(mappings, sort_keys=True, separators=(",", ":")).encode()
+def _unique_sanitized_names(values: Sequence[str], kind: str) -> dict[str, str]:
+    names: dict[str, str] = {}
+    owners: dict[str, str] = {}
+    for value in values:
+        name = _safe_arangodb_name(value)
+        previous = owners.get(name)
+        if previous is not None and previous != value:
+            raise ValueError(f"{kind} collision: {previous!r} and {value!r} both map to {name!r}")
+        owners[name] = value
+        names[value] = name
+    return names
+
+
+def _property_aliases(values: Sequence[str]) -> dict[str, str]:
+    aliases = _unique_sanitized_names(values, "property alias")
+    for canonical, alias in aliases.items():
+        if alias in ARANGODB_RESERVED_PROPERTIES:
+            raise ValueError(f"property alias collision: {canonical!r} maps to reserved field {alias!r}")
+    return aliases
+
+
+def _schema_hash(schema: dict[str, object]) -> str:
+    canonical = json.dumps(schema, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(canonical).hexdigest()
 
 

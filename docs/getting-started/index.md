@@ -46,8 +46,8 @@ Use the complete runtime when you need a continuously maintained topology:
 5. Consumers apply complete element `upsert` and `delete` commands.
 
 The production deployment expects Kubernetes, Helm, Kafka-compatible brokers,
-two pre-created topics, persistent storage for Flink, and an existing
-Elasticsearch 8.x cluster for the current-state projection and query API.
+two pre-created topics, persistent storage for Flink, and an existing ArangoDB
+3.12 deployment for the current-state property graph.
 
 For an isolated demonstration, follow the [local Kind
 quickstart](quickstart.md). For an existing cluster, follow the [Kubernetes
@@ -61,7 +61,7 @@ The project intentionally does not:
 - create Kafka topics;
 - modify your application instrumentation;
 - infer staleness outside Flink;
-- install Elasticsearch or Kibana;
+- expose a custom HTTP query API;
 - require a Flink Kubernetes Operator;
 - require any Kubernetes CRD.
 

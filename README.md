@@ -14,8 +14,8 @@ OTLP traces
   -> Kafka: otel.servicegraph.metrics
   -> HA PyFlink graph-element job
   -> Kafka: graph.elements.events
-  -> Elasticsearch current-state projection
-  -> typed query API or Kibana
+  -> ArangoDB current-state graph
+  -> read-only GraphBinary Gremlin
 ```
 
 The repository contains:
@@ -24,14 +24,16 @@ The repository contains:
   Pydantic entities, OTLP parsing, and pure graph transitions.
 - `services/otel-servicegraph-diff`: validated settings and PyFlink wiring.
 - `services/servicegraph-demo`: optional live synthetic OTLP traffic.
-- `services/servicegraph-access`: Elasticsearch initialization, Kafka projection,
-  and typed query API.
+- `services/servicegraph-indexer`: ArangoDB topology initialization and Kafka
+  lifecycle projection.
+- `services/servicegraph-gremlin`: the pinned TinkerPop/ArangoDB provider runtime.
 - `deploy/helm/servicegraph-collector`: the trace router and service-graph
   backend.
 - `deploy/helm/servicegraph-demo`: the optional traffic generator.
 - `deploy/helm/servicegraph-flink`: the standalone Flink Session runtime.
-- `deploy/helm/servicegraph-access`: the Elasticsearch initializer, projector,
-  and query API.
+- `deploy/helm/servicegraph-arangodb`: optional local-development ArangoDB.
+- `deploy/helm/servicegraph-indexer`: initializer and current-state indexer.
+- `deploy/helm/servicegraph-gremlin`: read-only Gremlin Server.
 
 Kafka and topic creation remain external platform concerns. Deployment uses
 Helm only and requires no CRDs or Kubernetes operator.
@@ -65,5 +67,7 @@ python -m pytest -m "not e2e"
 helm lint deploy/helm/servicegraph-collector
 helm lint deploy/helm/servicegraph-demo
 helm lint deploy/helm/servicegraph-flink
-helm lint deploy/helm/servicegraph-access
+helm lint deploy/helm/servicegraph-arangodb
+helm lint deploy/helm/servicegraph-indexer
+helm lint deploy/helm/servicegraph-gremlin
 ```

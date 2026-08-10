@@ -19,8 +19,8 @@ Check:
 kubectl get pods -n servicegraph-system
 kubectl logs -n servicegraph-system deployment/servicegraph-collector-router
 kubectl logs -n servicegraph-system statefulset/servicegraph-collector-backend
-kubectl logs -n servicegraph-system deployment/servicegraph-access-projector
-kubectl logs -n servicegraph-system deployment/servicegraph-access-api
+kubectl logs -n servicegraph-system deployment/indexer-servicegraph-indexer
+kubectl logs -n servicegraph-system deployment/gremlin-servicegraph-gremlin
 ```
 
 The service-graph connector cannot pair traces that are incomplete, sampled
@@ -154,11 +154,11 @@ client/server fields affect state.
 Compare:
 
 - output-topic end offsets;
-- projector consumer-group offsets;
-- projector logs;
-- Elasticsearch document timestamps.
+- indexer consumer-group offsets;
+- indexer logs;
+- ArangoDB document timestamps.
 
-The projector can be caught up while the index still contains an element if
+The indexer can be caught up while the graph still contains an element if
 Flink has not emitted the expected delete. A projector restart can also replay
 records safely because deterministic IDs make indexing and deletion
 idempotent.

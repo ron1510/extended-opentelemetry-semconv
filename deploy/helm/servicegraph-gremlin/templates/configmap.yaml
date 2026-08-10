@@ -1,0 +1,56 @@
+{{- $schema := .Files.Get "files/arangodb-graph-schema.json" | fromJson -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "servicegraph-gremlin.fullname" . }}-config
+  labels:
+    {{- include "servicegraph-gremlin.labels" . | nindent 4 }}
+data:
+  arangodb.yaml: |
+    gremlin:
+      graph: "com.arangodb.tinkerpop.gremlin.structure.ArangoDBGraph"
+      arangodb:
+        conf:
+          graph:
+            db: "${ARANGO_DATABASE}"
+            name: "${ARANGO_GRAPH}"
+            type: COMPLEX
+            enableDataDefinition: false
+            orphanCollections: []
+            edgeDefinitions:
+              {{- range $edge := $schema.edge_collections }}
+              - {{ printf "%s:[%s]->[%s]" $edge.collection (join "," $edge.from) (join "," $edge.to) | quote }}
+              {{- end }}
+          driver:
+            user: "${ARANGO_USER}"
+            password: "${ARANGO_PASSWORD}"
+            hosts:
+              - "${ARANGO_HOST}:${ARANGO_PORT}"
+  gremlin-server.yaml: |
+    host: 0.0.0.0
+    port: ${GREMLIN_SERVER_PORT}
+    evaluationTimeout: {{ .Values.gremlin.evaluationTimeoutMs }}
+    strictTransactionManagement: true
+    channelizer: org.apache.tinkerpop.gremlin.server.channel.WebSocketChannelizer
+    graphs:
+      graph: /opt/gremlin-server/runtime-conf/arangodb.yaml
+    scriptEngines:
+      gremlin-groovy:
+        plugins:
+          org.apache.tinkerpop.gremlin.server.jsr223.GremlinServerGremlinPlugin: {}
+          org.apache.tinkerpop.gremlin.tinkergraph.jsr223.TinkerGraphGremlinPlugin: {}
+          org.apache.tinkerpop.gremlin.jsr223.ScriptFileGremlinPlugin:
+            files:
+              - /opt/gremlin-server/runtime-conf/init.groovy
+          com.arangodb.tinkerpop.gremlin.jsr223.ArangoDBGremlinPlugin: {}
+    serializers:
+      - className: org.apache.tinkerpop.gremlin.util.ser.GraphBinaryMessageSerializerV1
+      - className: org.apache.tinkerpop.gremlin.util.ser.GraphSONMessageSerializerV3
+    processors:
+      - className: org.apache.tinkerpop.gremlin.server.op.traversal.TraversalOpProcessor
+  init.groovy: |
+    import static org.apache.tinkerpop.gremlin.process.traversal.AnonymousTraversalSource.traversal
+    import org.apache.tinkerpop.gremlin.process.traversal.strategy.verification.ReadOnlyStrategy
+
+    def globals = [:]
+    globals << [{{ .Values.gremlin.traversalSource | quote }}: traversal().withEmbedded(graph).withStrategies(ReadOnlyStrategy.instance())]

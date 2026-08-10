@@ -1,138 +1,93 @@
+# pyright: reportArgumentType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+
 from __future__ import annotations
 
 import time
 
 import pytest
+from gremlin_python.driver.protocol import GremlinServerError
 
-from tests.e2e.environment import E2EEnvironment, JsonValue, wait_for
+from tests.e2e.environment import E2EEnvironment, wait_for
 
 
 @pytest.mark.e2e
-def test_flink_events_are_projected_as_current_elasticsearch_state(
-    e2e_environment: E2EEnvironment,
-) -> None:
-    api_url = e2e_environment.start_api_port_forward()
+def test_schema2_events_are_projected_and_traversable(e2e_environment: E2EEnvironment) -> None:
     observed_at = time.time_ns()
-    service_id = "service:checkout-api"
+    storefront_id = "service:storefront"
+    checkout_id = "service:checkout-api"
     edge_id = "edge:storefront-calls-checkout"
-    service = _upsert(
-        service_id,
-        {
-            "id": service_id,
-            "kind": "node",
-            "type": "service",
-            "attributes": {"service.name": "checkout-api", "service.version": "2.4"},
-        },
-        observed_at,
-        "service-v1",
-    )
-    edge = _upsert(
-        edge_id,
-        {
-            "id": edge_id,
-            "kind": "edge",
-            "type": "calls",
-            "source_id": "service:storefront",
-            "target_id": service_id,
-            "attributes": {},
-            "metrics": {
-                "service_graph.request.total": 12.0,
-                "service_graph.request.failed.total": 1.0,
+    events = (
+        _upsert(storefront_id, _service(storefront_id, "storefront", "1.0"), observed_at, "storefront-v1"),
+        _upsert(checkout_id, _service(checkout_id, "checkout-api", "2.4"), observed_at, "checkout-v1"),
+        _upsert(
+            edge_id,
+            {
+                "id": edge_id,
+                "kind": "edge",
+                "type": "calls",
+                "source_id": storefront_id,
+                "target_id": checkout_id,
+                "attributes": {},
+                "metrics": {
+                    "service_graph.request.total": 12.0,
+                    "service_graph.request.failed.total": 1.0,
+                },
             },
-        },
-        observed_at,
-        "edge-v1",
+            observed_at,
+            "edge-v1",
+        ),
     )
-    e2e_environment.produce_events((service, edge))
+    e2e_environment.produce_events(events)
 
-    initial = wait_for(
-        "node and edge documents",
-        60,
-        lambda: _documents_by_id(e2e_environment, {service_id, edge_id}),
-    )
-    assert initial[service_id]["attributes"] == {
-        "service.name": "checkout-api",
-        "service.version": "2.4",
-    }
-    assert initial[edge_id]["source_id"] == "service:storefront"
-    assert initial[edge_id]["metrics"] == {
-        "service_graph.request.total": 12.0,
-        "service_graph.request.failed.total": 1.0,
-    }
-    queried = e2e_environment.post_json(
-        f"{api_url}/api/v1/elements/search",
-        {
-            "pattern": {
-                "op": "and",
-                "operands": [
-                    {
-                        "op": "or",
-                        "operands": [
-                            {"op": "regex", "field": "attributes.service.name", "pattern": "checkout-.*"},
-                            {"op": "eq", "field": "type", "value": "calls"},
-                        ],
-                    },
-                    {"op": "exists", "field": "id"},
-                ],
-            }
-        },
-    )
-    assert queried["total"] == 2
-    assert {str(element["id"]) for element in _elements(queried)} == {service_id, edge_id}
+    assert wait_for("two service vertices", 60, lambda: _vertex_count(e2e_environment, "service") == 2)
+    assert wait_for("calls edge", 60, lambda: _edge_count(e2e_environment, "calls") == 1)
+    with e2e_environment.graph() as graph:
+        checkout_versions = (
+            graph.V().has_label("service").has("service_name", "checkout-api").values("service_version").to_list()
+        )
+        assert checkout_versions == ["2.4"]
+        assert graph.V().has("service_name", "storefront").out("calls").values("service_name").to_list() == [
+            "checkout-api"
+        ]
+        assert graph.V().has("service_name", "checkout-api").in_("calls").values("service_name").to_list() == [
+            "storefront"
+        ]
+        assert graph.E().has_label("calls").values("service_graph_request_total").to_list() == [12.0]
 
-    updated_service = _upsert(
-        service_id,
-        {
-            "id": service_id,
-            "kind": "node",
-            "type": "service",
-            "attributes": {
-                "service.name": "checkout-api",
-                "service.version": "2.4",
-                "service.criticality": "tier-1",
-            },
-        },
-        observed_at + 1,
-        "service-v2",
-    )
-    e2e_environment.produce_events((updated_service, updated_service))
-    updated = wait_for(
-        "idempotent complete replacement",
+    replacement = _upsert(checkout_id, _service(checkout_id, "checkout-api", "2.5"), observed_at + 1, "checkout-v2")
+    e2e_environment.produce_events((replacement, replacement))
+    assert wait_for(
+        "idempotent vertex replacement",
         60,
-        lambda: _document_with_attribute(e2e_environment, service_id, "service.criticality", "tier-1"),
+        lambda: _service_versions(e2e_environment, "checkout-api") == ["2.5"],
     )
-    assert updated["attributes"] == {
-        "service.name": "checkout-api",
-        "service.version": "2.4",
-        "service.criticality": "tier-1",
-    }
-    assert len([document for document in e2e_environment.elasticsearch_sources() if document["id"] == service_id]) == 1
-    updated_query = e2e_environment.post_json(
-        f"{api_url}/api/v1/elements/search",
-        {
-            "pattern": {
-                "op": "eq",
-                "field": "attributes.service.criticality",
-                "value": "tier-1",
-            }
-        },
-    )
-    assert [element["id"] for element in _elements(updated_query)] == [service_id]
-    assert wait_for("committed Kafka offsets", 30, lambda: e2e_environment.committed_offset() >= 4)
+    assert wait_for("committed offsets", 30, lambda: e2e_environment.committed_offset() >= 5)
+
+    e2e_environment.restart_projection()
+    assert _service_versions(e2e_environment, "checkout-api") == ["2.5"]
+    assert _edge_count(e2e_environment, "calls") == 1
+
+    with e2e_environment.graph() as graph, pytest.raises(GremlinServerError):
+        graph.add_v("service").property("service_name", "forbidden").iterate()
 
     e2e_environment.produce_events(
         (
             _delete(edge_id, observed_at + 2, "edge-delete"),
-            _delete(service_id, observed_at + 2, "service-delete"),
+            _delete(checkout_id, observed_at + 2, "checkout-delete"),
+            _delete(storefront_id, observed_at + 2, "storefront-delete"),
         )
     )
-    wait_for("deleted Elasticsearch state", 60, lambda: not e2e_environment.elasticsearch_sources())
-    assert wait_for("delete offsets", 30, lambda: e2e_environment.committed_offset() >= 6)
-    deleted_query = e2e_environment.post_json(
-        f"{api_url}/api/v1/elements/search",
-        {"pattern": {"op": "exists", "field": "id"}},
-    )
-    assert deleted_query == {"total": 0, "elements": []}
+    assert wait_for("stale lifecycle deletes", 60, lambda: _all_counts(e2e_environment) == (0, 0))
+    assert wait_for("delete offsets", 30, lambda: e2e_environment.committed_offset() >= 8)
+
+
+def _service(element_id: str, name: str, version: str) -> dict[str, object]:
+    return {
+        "id": element_id,
+        "kind": "node",
+        "type": "service",
+        "attributes": {"service.name": name, "service.version": version},
+    }
 
 
 def _upsert(
@@ -142,7 +97,7 @@ def _upsert(
     event_id: str,
 ) -> dict[str, object]:
     return {
-        "schema_version": "1",
+        "schema_version": "2.0",
         "event_id": event_id,
         "event_type": "graph_element_state_changed",
         "operation": "upsert",
@@ -156,7 +111,7 @@ def _upsert(
 
 def _delete(element_id: str, observed_at_unix_nano: int, event_id: str) -> dict[str, object]:
     return {
-        "schema_version": "1",
+        "schema_version": "2.0",
         "event_id": event_id,
         "event_type": "graph_element_state_changed",
         "operation": "delete",
@@ -168,31 +123,21 @@ def _delete(element_id: str, observed_at_unix_nano: int, event_id: str) -> dict[
     }
 
 
-def _documents_by_id(
-    environment: E2EEnvironment,
-    expected_ids: set[str],
-) -> dict[str, dict[str, JsonValue]] | None:
-    documents = environment.elasticsearch_sources()
-    by_id = {str(document["id"]): dict(document) for document in documents}
-    return by_id if expected_ids <= by_id.keys() else None
+def _vertex_count(environment: E2EEnvironment, label: str) -> int:
+    with environment.graph() as graph:
+        return int(graph.V().has_label(label).count().next())
 
 
-def _document_with_attribute(
-    environment: E2EEnvironment,
-    element_id: str,
-    attribute: str,
-    expected: JsonValue,
-) -> dict[str, JsonValue] | None:
-    for document in environment.elasticsearch_sources():
-        if document["id"] != element_id:
-            continue
-        attributes = document["attributes"]
-        if isinstance(attributes, dict) and attributes.get(attribute) == expected:
-            return dict(document)
-    return None
+def _edge_count(environment: E2EEnvironment, label: str) -> int:
+    with environment.graph() as graph:
+        return int(graph.E().has_label(label).count().next())
 
 
-def _elements(response: dict[str, JsonValue]) -> list[dict[str, JsonValue]]:
-    elements = response["elements"]
-    assert isinstance(elements, list)
-    return [element for value in elements if isinstance(value, dict) for element in [value]]
+def _service_versions(environment: E2EEnvironment, name: str) -> list[str]:
+    with environment.graph() as graph:
+        return [str(value) for value in graph.V().has("service_name", name).values("service_version").to_list()]
+
+
+def _all_counts(environment: E2EEnvironment) -> tuple[int, int]:
+    with environment.graph() as graph:
+        return int(graph.V().count().next()), int(graph.E().count().next())

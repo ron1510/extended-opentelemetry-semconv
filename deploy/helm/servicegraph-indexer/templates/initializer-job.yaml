@@ -1,0 +1,51 @@
+{{- if not .Values.arangodb.urls }}
+{{- fail "arangodb.urls must contain at least one URL" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "servicegraph-indexer.fullname" . }}-initializer
+  labels:
+    {{- include "servicegraph-indexer.labels" . | nindent 4 }}
+    app.kubernetes.io/component: initializer
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: {{ add (.Values.arangodb.connectionDeadlineSeconds | int) 120 }}
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "servicegraph-indexer.labels" . | nindent 8 }}
+        app.kubernetes.io/component: initializer
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ required "serviceAccountName is required" .Values.serviceAccountName }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: initializer
+          image: {{ include "servicegraph-indexer.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["servicegraph-indexer-init"]
+          env:
+            {{- include "servicegraph-indexer.arangoEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}

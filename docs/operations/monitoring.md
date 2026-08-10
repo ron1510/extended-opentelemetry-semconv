@@ -36,7 +36,7 @@ Track:
 - input and output topic write rates;
 - partition availability and under-replication;
 - Flink consumer-group lag;
-- Elasticsearch projector consumer-group lag;
+- ArangoDB indexer consumer-group lag;
 - broker request latency and rejected writes;
 - topic retention relative to recovery time.
 
@@ -68,20 +68,21 @@ kubectl port-forward -n servicegraph-system \
 The job must remain `RUNNING`, and completed checkpoints must continue to
 increase while traffic is present.
 
-## Elasticsearch access
+## ArangoDB and Gremlin access
 
 Check:
 
-```console
-curl http://servicegraph-access-api:8080/health/live
-curl http://servicegraph-access-api:8080/health/ready
-curl http://elasticsearch:9200/servicegraph-elements/_count
+Check the indexer Deployment, its Kafka group lag, ArangoDB server health and
+storage, and Gremlin Server TCP readiness. A bounded traversal is a useful
+functional probe:
+
+```python
+g.V().limit(1).count().next()
 ```
 
-API readiness fails when Elasticsearch or the index is unavailable. Compare
-the projector consumer-group position with the output topic end offset when
-the index appears stale. Monitor Elasticsearch cluster health, rejected bulk
-requests, index size, shard allocation, and query latency.
+Compare the indexer group position with the output topic end offset when the
+graph appears stale. Monitor ArangoDB request errors, disk use, collection
+growth, and Gremlin evaluation timeouts.
 
 ## End-to-end canary
 
@@ -105,7 +106,7 @@ Alert on:
 - repeated Collector export failures;
 - Collector or TaskManager restart loops;
 - `rejected_records` increasing;
-- Flink state or Elasticsearch storage nearing capacity;
-- API readiness failure;
-- projector restarts or sustained consumer lag;
+- Flink state or ArangoDB storage nearing capacity;
+- Gremlin readiness failure;
+- indexer restarts or sustained consumer lag;
 - no output events while input activity is present.

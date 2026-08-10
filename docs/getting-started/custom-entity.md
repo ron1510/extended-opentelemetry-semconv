@@ -110,16 +110,14 @@ business.capability.name = order-fulfillment
 
 Rebuild the Flink runtime image because it contains the generated Python package
 and relationship metadata. Upgrade the Collector chart because its generated
-dimensions ConfigMap changed. Rebuild the access image and run the initializer
-against a fresh or intentionally migrated Elasticsearch index because the
-strict generated mapping now contains the custom scalar fields.
+dimensions ConfigMap changed. Rebuild the indexer and Gremlin images and run
+the additive initializer so the generated collections, edge definitions, and
+identifying indexes are available.
 
 After matching traffic is observed, query the typed API:
 
-```console
-curl -X POST http://localhost:8080/api/v1/elements/search \
-  -H "Content-Type: application/json" \
-  -d '{"pattern":{"op":"eq","field":"type","value":"business.capability"}}'
+```python
+g.V().has_label("business_capability").to_list()
 ```
 
 See [Registry Extensions](../registry-extensions.md) for the complete model and

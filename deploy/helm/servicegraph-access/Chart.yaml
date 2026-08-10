@@ -1,9 +1,0 @@
-apiVersion: v2
-name: servicegraph-access
-description: Elasticsearch current-state projection for service graph elements
-type: application
-version: 0.3.0
-appVersion: "0.3.0"
-kubeVersion: ">=1.25.0-0"
-annotations:
-  artifacthub.io/license: Apache-2.0

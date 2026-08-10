@@ -9,8 +9,8 @@ OTLP clients or optional live demo
   -> otel.servicegraph.metrics
   -> Flink graph-element engine
   -> graph.elements.events
-  -> Elasticsearch current-state projection
-  -> typed query API or Kibana
+  -> ArangoDB current-state graph
+  -> read-only GraphBinary Gremlin
 ```
 
 Both routers use the same fixed hash ring of backend pod DNS names. The
@@ -53,18 +53,23 @@ projection operations are idempotent.
 
 ## Projection and access
 
-The projector applies the complete graph elements declared by Flink to a strict
-Elasticsearch index. Upserts replace the document under the deterministic
-element ID and deletes remove it. The projector performs no semantic
-extraction, contributor merging, reference counting, expiry, or staleness
-inference.
+The indexer applies complete graph elements declared by Flink to native
+ArangoDB vertex and edge collections. Upserts replace the document under a
+SHA-256 key derived from `element_id`; deletes remove that key. The indexer
+performs no semantic extraction, contributor merging, reference counting,
+expiry, or staleness inference.
 
-The stateless query API validates recursive patterns against the generated
-mapping and translates them to Elasticsearch queries. Kibana can inspect the
-same current-state index directly in development and operational environments.
+The generated graph schema maps semantic entity and relationship types to
+stable collections and maps canonical dotted OTel fields to Gremlin-safe scalar
+properties. Canonical `attributes` and `metrics` maps remain in every document.
+Trusted internal clients connect directly to Gremlin Server over GraphBinary.
+`ReadOnlyStrategy` and read-only permissions on every semantic ArangoDB
+collection independently reject graph mutations. The provider identity has a
+narrow write exception for its `TINKERPOP-GRAPH-VARIABLES` version document,
+which provider `4.0.0` rewrites while opening the graph.
 
 The semantic package owns interpretation and pure transitions. Flink owns keyed
 state, timers, checkpoints, and graph lifecycle. Collector owns trace pairing
-and service-graph metrics. The access projector owns Kafka offsets and the
-Elasticsearch projection. The query API owns only typed query translation.
-Helm owns runtime resources.
+and service-graph metrics. The indexer owns Kafka offsets and the ArangoDB
+current-state projection. Gremlin Server exposes read-only traversal. Helm owns
+runtime resources.

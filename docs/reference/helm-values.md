@@ -53,22 +53,39 @@ also available in the chart.
 Kafka security fields and both topic names must match the Collector and
 consumers.
 
-## Elasticsearch access
+## ArangoDB indexer
 
 | Path | Default | Purpose |
 | --- | --- | --- |
-| `image.repository` | internal example | Access image |
-| `image.tag` | `0.3.0` | Access image tag |
-| `projector.replicas` | `1` | Kafka projector replicas |
-| `projector.groupId` | `servicegraph-elasticsearch-projector` | Kafka group |
-| `api.replicas` | `1` | Query API replicas |
-| `api.port` | `8080` | Internal HTTP port |
-| `api.elasticsearchPageSize` | `1000` | Internal PIT page size |
-| `elasticsearch.urls` | internal example | Elasticsearch endpoints |
-| `elasticsearch.indexName` | `servicegraph-elements` | Projection index |
-| `elasticsearch.numberOfShards` | `1` | Primary shards at creation |
-| `elasticsearch.numberOfReplicas` | `1` | Replica shards |
-| `elasticsearch.refreshInterval` | `5s` | Index refresh interval |
+| `image.repository` | internal example | Indexer image |
+| `image.tag` | `0.1.0` | Indexer image tag |
+| `replicas` | `1` | Kafka indexer replicas |
+| `consumerGroupId` | `servicegraph-arangodb-indexer` | Kafka group |
+| `arangodb.urls` | local example | ArangoDB endpoints |
+| `arangodb.database` | `servicegraph` | Existing database |
+| `arangodb.graph` | `servicegraph` | Named graph |
+| `arangodb.allowDatabaseCreation` | `false` | Local-only database creation |
+| `arangodb.auth.existingSecret` | writer Secret | Writer credentials |
+
+## Gremlin Server
+
+| Path | Default | Purpose |
+| --- | --- | --- |
+| `image.repository` | internal example | Validated Gremlin image |
+| `image.tag` | `0.1.0` | Gremlin image tag |
+| `replicas` | `1` | Read-only server replicas |
+| `service.port` | `8182` | GraphBinary/WebSocket port |
+| `gremlin.evaluationTimeoutMs` | `30000` | Traversal timeout |
+| `arangodb.auth.existingSecret` | reader Secret | Read-only credentials |
+| `jvm.options` | bounded 384 MiB heap | JVM memory settings |
+
+## Local ArangoDB
+
+| Path | Default | Purpose |
+| --- | --- | --- |
+| `image.tag` | `3.12.9.4` | Local ArangoDB version |
+| `persistence.size` | `2Gi` | Development data claim |
+| `persistence.existingClaim` | empty | Optional existing RWO claim |
 
 ## Demo
 
@@ -90,6 +107,8 @@ consumers.
 ```console
 helm show values deploy/helm/servicegraph-collector
 helm show values deploy/helm/servicegraph-flink
-helm show values deploy/helm/servicegraph-access
+helm show values deploy/helm/servicegraph-arangodb
+helm show values deploy/helm/servicegraph-indexer
+helm show values deploy/helm/servicegraph-gremlin
 helm show values deploy/helm/servicegraph-demo
 ```

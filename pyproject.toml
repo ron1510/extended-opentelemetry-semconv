@@ -12,6 +12,7 @@ dependencies = []
 dev = [
   "hypothesis==6.158.0",
   "httpx==0.28.1",
+  "gremlinpython==3.8.1",
   "pyright==1.1.411",
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
@@ -28,19 +29,19 @@ packages = []
 addopts = ["--strict-markers"]
 markers = [
   "e2e: provisions a disposable Kubernetes environment and exercises the complete runtime",
-  "elasticsearch: starts a disposable Elasticsearch container",
+  "arangodb: starts disposable ArangoDB and Gremlin containers",
 ]
 pythonpath = [
   "packages/extended-opentelemetry-semconv/src",
   "services/otel-servicegraph-diff/src",
   "services/servicegraph-demo/src",
-  "services/servicegraph-access/src",
+  "services/servicegraph-indexer/src",
 ]
 testpaths = [
   "packages/extended-opentelemetry-semconv/tests",
   "services/otel-servicegraph-diff/tests",
   "services/servicegraph-demo/tests",
-  "services/servicegraph-access/tests",
+  "services/servicegraph-indexer/tests",
   "tests/e2e",
 ]
 
@@ -68,7 +69,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["RUF043"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["extended_otel_semconv", "otel_servicegraph_diff", "servicegraph_access", "servicegraph_demo"]
+known-first-party = ["extended_otel_semconv", "otel_servicegraph_diff", "servicegraph_demo", "servicegraph_indexer"]
 
 [tool.pyright]
 include = [
@@ -79,8 +80,8 @@ include = [
   "services/otel-servicegraph-diff/tests",
   "services/servicegraph-demo/src",
   "services/servicegraph-demo/tests",
-  "services/servicegraph-access/src",
-  "services/servicegraph-access/tests",
+  "services/servicegraph-indexer/src",
+  "services/servicegraph-indexer/tests",
   "conftest.py",
   "tests/e2e",
   "packages/extended-opentelemetry-semconv/tests",
@@ -89,7 +90,7 @@ extraPaths = [
   "packages/extended-opentelemetry-semconv/src",
   "services/otel-servicegraph-diff/src",
   "services/servicegraph-demo/src",
-  "services/servicegraph-access/src",
+  "services/servicegraph-indexer/src",
 ]
 pythonVersion = "3.12"
 venvPath = "."

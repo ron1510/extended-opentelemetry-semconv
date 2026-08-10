@@ -1,7 +1,8 @@
-# pyright: reportUnknownMemberType=false
+# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -10,23 +11,25 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
+from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
+from gremlin_python.process.anonymous_traversal import traversal
+from gremlin_python.process.graph_traversal import GraphTraversalSource
 from kafka import KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
 
-# kafka-python-ng exposes dynamic producer future and admin response types.
-
-type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
-
 KIND_NODE_IMAGE = "kindest/node:v1.32.2"
 REDPANDA_IMAGE = "docker.redpanda.com/redpandadata/redpanda:v26.1.6"
-ELASTICSEARCH_IMAGE = "docker.elastic.co/elasticsearch/elasticsearch:8.15.5"
+ARANGODB_IMAGE = "arangodb:3.12.9.4"
 NAMESPACE = "servicegraph-e2e"
+ARANGO_ROOT_PASSWORD = "servicegraph-e2e-root"
+ARANGO_READER_PASSWORD = "servicegraph-e2e-reader"
 
 
 @dataclass
@@ -51,9 +54,9 @@ class E2EEnvironment:
     work_dir: Path
     cluster_name: str = field(default_factory=lambda: f"servicegraph-e2e-{uuid4().hex[:8]}")
     namespace: str = NAMESPACE
-    elasticsearch_host_url: str | None = field(default=None, init=False)
+    arango_host_url: str | None = field(default=None, init=False)
     kafka_host_address: str | None = field(default=None, init=False)
-    port_forwards: list[PortForward] = field(default_factory=lambda: list[PortForward](), init=False)
+    gremlin_forward: PortForward | None = field(default=None, init=False)
 
     @property
     def kubeconfig(self) -> Path:
@@ -64,12 +67,16 @@ class E2EEnvironment:
         return self.cluster_name.removeprefix("servicegraph-e2e-")
 
     @property
-    def access_image(self) -> str:
-        return f"extended-otel-servicegraph-access:e2e-{self.suffix}"
+    def indexer_image(self) -> str:
+        return f"extended-otel-servicegraph-indexer:e2e-{self.suffix}"
 
     @property
-    def elasticsearch_container(self) -> str:
-        return f"servicegraph-es-{self.suffix}"
+    def gremlin_image(self) -> str:
+        return f"extended-otel-servicegraph-gremlin:e2e-{self.suffix}"
+
+    @property
+    def arango_container(self) -> str:
+        return f"servicegraph-arango-{self.suffix}"
 
     @property
     def redpanda_container(self) -> str:
@@ -82,45 +89,41 @@ class E2EEnvironment:
     def provision(self) -> None:
         self._announce("checking local prerequisites")
         self._check_prerequisites()
-        self._announce("building the access production image")
-        self._build_access_image()
+        self._announce("building indexer and validated Gremlin runtime images")
+        self._build_images()
         self._announce(f"creating Kind cluster {self.cluster_name}")
         self.run(
             [
-                "kind",
-                "create",
-                "cluster",
-                "--name",
-                self.cluster_name,
-                "--image",
-                KIND_NODE_IMAGE,
-                "--kubeconfig",
-                str(self.kubeconfig),
-                "--wait",
-                "5m",
+                "kind", "create", "cluster", "--name", self.cluster_name, "--image", KIND_NODE_IMAGE,
+                "--kubeconfig", str(self.kubeconfig), "--wait", "5m",
             ],
             timeout=600,
             include_kubeconfig=False,
         )
-        self.run(
-            ["kind", "load", "docker-image", self.access_image, "--name", self.cluster_name],
-            timeout=600,
-            include_kubeconfig=False,
-        )
+        for image in (self.indexer_image, self.gremlin_image):
+            self.run(
+                ["kind", "load", "docker-image", image, "--name", self.cluster_name],
+                timeout=600,
+                include_kubeconfig=False,
+            )
         self.kubectl("create", "namespace", self.namespace)
-        self._announce("starting Docker Redpanda and Elasticsearch")
-        self._start_elasticsearch()
+        self._announce("starting Docker Redpanda and ArangoDB")
+        self._start_arangodb()
         self._start_redpanda()
-        self._announce("installing the access Helm chart")
-        self._install_access()
-        self._announce("focused projector environment is ready")
+        self._create_secret("servicegraph-arangodb-writer", "root", ARANGO_ROOT_PASSWORD)
+        self._announce("installing topology initializer and indexer")
+        self._install_indexer()
+        self._create_read_only_user()
+        self._create_secret("servicegraph-arangodb-reader", "servicegraph-reader", ARANGO_READER_PASSWORD)
+        self._announce("installing read-only Gremlin Server")
+        self._install_gremlin()
+        self._start_gremlin_forward()
+        self._announce("ArangoDB/Gremlin projection environment is ready")
 
     def cleanup(self) -> None:
-        for forward in reversed(self.port_forwards):
-            forward.close()
-        self.port_forwards.clear()
+        self._close_gremlin_forward()
         self.run(
-            ["docker", "rm", "--force", self.elasticsearch_container, self.redpanda_container],
+            ["docker", "rm", "--force", self.arango_container, self.redpanda_container],
             timeout=120,
             check=False,
             include_kubeconfig=False,
@@ -131,26 +134,24 @@ class E2EEnvironment:
             check=False,
             include_kubeconfig=False,
         )
-        self.run(
-            ["docker", "image", "rm", self.access_image],
-            timeout=120,
-            check=False,
-            include_kubeconfig=False,
-        )
+        for image in (self.indexer_image, self.gremlin_image):
+            self.run(["docker", "image", "rm", image], timeout=120, check=False, include_kubeconfig=False)
         self.kubeconfig.unlink(missing_ok=True)
 
     def diagnostics(self) -> str:
         sections: list[str] = []
-        for command in (
-            ["get", "pods", "-o", "wide"],
-            ["get", "jobs"],
-            ["get", "events", "--sort-by=.metadata.creationTimestamp"],
-            ["logs", "deployment/servicegraph-access-projector", "--tail=200"],
-            ["logs", "deployment/servicegraph-access-api", "--tail=200"],
-        ):
-            result = self.kubectl(*command, check=False, timeout=60)
-            sections.append(f"$ kubectl {' '.join(command)}\n{result.stdout}{result.stderr}")
-        for container in (self.redpanda_container, self.elasticsearch_container):
+        if self.kubeconfig.exists():
+            for command in (
+                ["get", "pods", "-o", "wide"],
+                ["get", "jobs"],
+                ["get", "events", "--sort-by=.metadata.creationTimestamp"],
+                ["logs", "deployment/servicegraph-indexer", "--tail=200"],
+                ["logs", "deployment/servicegraph-indexer", "--previous", "--tail=200"],
+                ["logs", "deployment/servicegraph-gremlin", "--tail=200"],
+            ):
+                result = self.kubectl(*command, check=False, timeout=60)
+                sections.append(f"$ kubectl {' '.join(command)}\n{result.stdout}{result.stderr}")
+        for container in (self.redpanda_container, self.arango_container):
             result = self.run(
                 ["docker", "logs", "--tail", "100", container],
                 timeout=60,
@@ -166,8 +167,8 @@ class E2EEnvironment:
             raise RuntimeError("Redpanda host address is not initialized")
         producer = KafkaProducer(
             bootstrap_servers=address,
-            key_serializer=_serialize_key,
-            value_serializer=_serialize_event,
+            key_serializer=lambda value: cast(str, value).encode(),
+            value_serializer=lambda value: json.dumps(cast(dict[str, object], value), separators=(",", ":")).encode(),
         )
         try:
             for event in events:
@@ -182,74 +183,31 @@ class E2EEnvironment:
             raise RuntimeError("Redpanda host address is not initialized")
         admin = KafkaAdminClient(bootstrap_servers=address)
         try:
-            offsets = admin.list_consumer_group_offsets("servicegraph-elasticsearch-projector")
+            offsets = admin.list_consumer_group_offsets("servicegraph-arangodb-indexer")
             return max((metadata.offset for metadata in offsets.values()), default=0)
         finally:
             admin.close()
 
-    def elasticsearch_sources(self) -> list[dict[str, JsonValue]]:
-        url = self.elasticsearch_host_url
-        if url is None:
-            raise RuntimeError("Elasticsearch host URL is not initialized")
-        with urllib.request.urlopen(f"{url}/servicegraph-elements/_search?size=500", timeout=5) as response:
-            document = cast(dict[str, JsonValue], json.loads(response.read()))
-        hits_section = cast(dict[str, JsonValue], document["hits"])
-        hits = cast(list[JsonValue], hits_section["hits"])
-        return [cast(dict[str, JsonValue], cast(dict[str, JsonValue], hit)["_source"]) for hit in hits]
+    @contextmanager
+    def graph(self) -> Generator[GraphTraversalSource]:
+        forward = self.gremlin_forward
+        if forward is None:
+            raise RuntimeError("Gremlin port-forward is not initialized")
+        connection = DriverRemoteConnection(f"ws://127.0.0.1:{forward.local_port}/gremlin", "g")
+        try:
+            yield traversal().with_remote(connection)
+        finally:
+            connection.close()
 
-    def start_api_port_forward(self) -> str:
-        local_port = _free_port()
-        process = subprocess.Popen(
-            [
-                "kubectl",
-                "port-forward",
-                "--namespace",
-                self.namespace,
-                "service/servicegraph-access-api",
-                f"{local_port}:8080",
-                "--address",
-                "127.0.0.1",
-            ],
-            cwd=self.root,
-            env=self.command_environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        forward = PortForward(process, local_port)
-        self.port_forwards.append(forward)
+    def restart_projection(self) -> None:
+        self._close_gremlin_forward()
+        self.kubectl("delete", "pod", "-l", "app.kubernetes.io/name=servicegraph-indexer")
+        self.kubectl("delete", "pod", "-l", "app.kubernetes.io/name=servicegraph-gremlin")
+        self.kubectl("rollout", "status", "deployment/servicegraph-indexer", "--timeout=180s")
+        self.kubectl("rollout", "status", "deployment/servicegraph-gremlin", "--timeout=180s")
+        self._start_gremlin_forward()
 
-        def ready() -> bool:
-            if process.poll() is not None:
-                output = process.stdout.read() if process.stdout is not None else ""
-                raise RuntimeError(f"API port-forward failed: {output}")
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{local_port}/health/ready", timeout=2) as response:
-                    return response.status == 200
-            except urllib.error.URLError:
-                return False
-
-        wait_for("access API port-forward", 30, ready)
-        return f"http://127.0.0.1:{local_port}"
-
-    def post_json(self, url: str, document: dict[str, object]) -> dict[str, JsonValue]:
-        request = urllib.request.Request(
-            url,
-            data=json.dumps(document).encode(),
-            headers={"content-type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=10) as response:
-            return cast(dict[str, JsonValue], json.loads(response.read()))
-
-    def kubectl(
-        self,
-        *args: str,
-        timeout: int = 120,
-        check: bool = True,
-    ) -> subprocess.CompletedProcess[str]:
+    def kubectl(self, *args: str, timeout: int = 120, check: bool = True) -> subprocess.CompletedProcess[str]:
         return self.run(["kubectl", "--namespace", self.namespace, *args], timeout=timeout, check=check)
 
     def run(
@@ -282,87 +240,66 @@ class E2EEnvironment:
             raise RuntimeError(f"missing E2E prerequisites: {', '.join(missing)}")
         self.run(["docker", "version"], timeout=30, include_kubeconfig=False)
 
-    def _build_access_image(self) -> None:
-        build_arguments: list[str] = []
+    def _build_images(self) -> None:
+        pip_arguments: list[str] = []
         for name in ("PIP_INDEX_URL", "PIP_TRUSTED_HOST"):
             if value := os.getenv(name):
-                build_arguments.extend(("--build-arg", f"{name}={value}"))
+                pip_arguments.extend(("--build-arg", f"{name}={value}"))
         self.run(
             [
-                "docker",
-                "build",
-                "--tag",
-                self.access_image,
-                "--file",
-                "services/servicegraph-access/Dockerfile",
-                *build_arguments,
-                ".",
+                "docker", "build", "--tag", self.indexer_image, "--file",
+                "services/servicegraph-indexer/Dockerfile", *pip_arguments, ".",
+            ],
+            timeout=1200,
+            include_kubeconfig=False,
+        )
+        gremlin_arguments: list[str] = []
+        for name in ("TINKERPOP_SERVER_URL", "MAVEN_REPOSITORY_URL"):
+            if value := os.getenv(name):
+                gremlin_arguments.extend(("--build-arg", f"{name}={value}"))
+        self.run(
+            [
+                "docker", "build", "--tag", self.gremlin_image, "--file",
+                "services/servicegraph-gremlin/Dockerfile", *gremlin_arguments,
+                "services/servicegraph-gremlin",
             ],
             timeout=1200,
             include_kubeconfig=False,
         )
 
-    def _start_elasticsearch(self) -> None:
+    def _start_arangodb(self) -> None:
         port = _free_port()
         self.run(
             [
-                "docker",
-                "run",
-                "--detach",
-                "--rm",
-                "--name",
-                self.elasticsearch_container,
-                "--network",
-                "kind",
-                "--publish",
-                f"127.0.0.1:{port}:9200",
-                "--env",
-                "discovery.type=single-node",
-                "--env",
-                "xpack.security.enabled=false",
-                "--env",
-                "ES_JAVA_OPTS=-Xms512m -Xmx512m",
-                ELASTICSEARCH_IMAGE,
+                "docker", "run", "--detach", "--rm", "--name", self.arango_container,
+                "--network", "kind", "--publish", f"127.0.0.1:{port}:8529",
+                "--env", f"ARANGO_ROOT_PASSWORD={ARANGO_ROOT_PASSWORD}", ARANGODB_IMAGE,
             ],
             timeout=180,
             include_kubeconfig=False,
         )
-        self.elasticsearch_host_url = f"http://127.0.0.1:{port}"
-        self._expose_container("servicegraph-elasticsearch", self.elasticsearch_container, 9200)
+        self.arango_host_url = f"http://127.0.0.1:{port}"
+        self._expose_container("servicegraph-arangodb", self.arango_container, 8529)
+        wait_for("ArangoDB", 120, self._arango_ready)
+
+    def _arango_ready(self) -> bool:
+        try:
+            self._arango_request("GET", "/_api/version")
+            return True
+        except urllib.error.URLError:
+            return False
 
     def _start_redpanda(self) -> None:
         port = _free_port()
         internal_host = f"servicegraph-redpanda.{self.namespace}.svc"
         self.run(
             [
-                "docker",
-                "run",
-                "--detach",
-                "--rm",
-                "--name",
-                self.redpanda_container,
-                "--network",
-                "kind",
-                "--publish",
-                f"127.0.0.1:{port}:19092",
-                REDPANDA_IMAGE,
-                "redpanda",
-                "start",
-                "--mode",
-                "dev-container",
-                "--smp",
-                "1",
-                "--memory",
-                "512M",
-                "--reserve-memory",
-                "0M",
-                "--node-id",
-                "0",
-                "--check=false",
-                "--kafka-addr",
-                "internal://0.0.0.0:9092,external://0.0.0.0:19092",
-                "--advertise-kafka-addr",
-                f"internal://{internal_host}:9092,external://127.0.0.1:{port}",
+                "docker", "run", "--detach", "--rm", "--name", self.redpanda_container,
+                "--network", "kind", "--publish", f"127.0.0.1:{port}:19092", REDPANDA_IMAGE,
+                "redpanda", "start", "--mode", "dev-container", "--smp", "1", "--memory", "512M",
+                "--reserve-memory", "0M", "--node-id", "0", "--check=false",
+                "--kafka-addr", "internal://0.0.0.0:9092,external://0.0.0.0:19092",
+                "--advertise-kafka-addr", f"internal://{internal_host}:9092,external://127.0.0.1:{port}",
             ],
             timeout=180,
             include_kubeconfig=False,
@@ -378,13 +315,9 @@ class E2EEnvironment:
         try:
             admin = KafkaAdminClient(bootstrap_servers=address, request_timeout_ms=5_000)
             try:
-                topic = NewTopic(
-                    "graph.elements.events",
-                    1,
-                    1,
-                    topic_configs={"cleanup.policy": "compact"},
+                admin.create_topics(
+                    (NewTopic("graph.elements.events", 1, 1, topic_configs={"cleanup.policy": "compact"}),)
                 )
-                admin.create_topics((topic,))
             finally:
                 admin.close()
             return True
@@ -397,8 +330,6 @@ class E2EEnvironment:
             timeout=30,
             include_kubeconfig=False,
         ).stdout.strip()
-        if not address:
-            raise RuntimeError(f"{container} has no address on the Kind network")
         self._apply_json(
             {
                 "apiVersion": "v1",
@@ -438,46 +369,112 @@ class E2EEnvironment:
         if result.returncode != 0:
             raise RuntimeError(f"failed to apply test resource: {result.stdout}{result.stderr}")
 
-    def _install_access(self) -> None:
+    def _create_secret(self, name: str, username: str, password: str) -> None:
+        self._apply_json(
+            {
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {"name": name, "namespace": self.namespace},
+                "type": "Opaque",
+                "stringData": {"username": username, "password": password},
+            }
+        )
+
+    def _install_indexer(self) -> None:
         self.run(
             [
-                "helm",
-                "upgrade",
-                "--install",
-                "access",
-                "deploy/helm/servicegraph-access",
-                "--namespace",
-                self.namespace,
-                "--set",
-                "fullnameOverride=servicegraph-access",
-                "--set",
-                "image.repository=extended-otel-servicegraph-access",
-                "--set",
-                f"image.tag=e2e-{self.suffix}",
-                "--set",
-                "image.pullPolicy=IfNotPresent",
-                "--set",
-                "elasticsearch.urls[0]=http://servicegraph-elasticsearch:9200",
-                "--set",
-                "elasticsearch.numberOfReplicas=0",
-                "--set",
-                "elasticsearch.auth.existingSecret=",
-                "--set",
-                "elasticsearch.tls.existingSecret=",
-                "--set",
-                "api.elasticsearchPageSize=1",
-                "--set",
-                "streamContract.kafka.brokers[0]=servicegraph-redpanda:9092",
-                "--set",
-                "streamContract.kafka.security.protocol=PLAINTEXT",
-                "--set",
-                "streamContract.kafka.security.existingSecret=",
-                "--wait",
-                "--timeout",
-                "5m",
+                "helm", "upgrade", "--install", "indexer", "deploy/helm/servicegraph-indexer",
+                "--namespace", self.namespace, "--set", "fullnameOverride=servicegraph-indexer",
+                "--set", "image.repository=extended-otel-servicegraph-indexer", "--set", f"image.tag=e2e-{self.suffix}",
+                "--set", "image.pullPolicy=IfNotPresent", "--set", "arangodb.urls[0]=http://servicegraph-arangodb:8529",
+                "--set", "arangodb.allowDatabaseCreation=true", "--set", "arangodb.verifyTls=false",
+                "--set", "streamContract.kafka.brokers[0]=servicegraph-redpanda:9092",
+                "--set", "streamContract.kafka.security.protocol=PLAINTEXT",
+                "--set", "streamContract.kafka.security.existingSecret=", "--wait", "--timeout", "5m",
             ],
             timeout=360,
         )
+
+    def _create_read_only_user(self) -> None:
+        try:
+            self._arango_request(
+                "POST",
+                "/_api/user",
+                {"user": "servicegraph-reader", "passwd": ARANGO_READER_PASSWORD, "active": True},
+            )
+        except urllib.error.HTTPError as error:
+            if error.code != 409:
+                raise
+        self._arango_request(
+            "PUT",
+            "/_api/user/servicegraph-reader/database/servicegraph",
+            {"grant": "ro"},
+        )
+        self._arango_request(
+            "PUT",
+            "/_api/user/servicegraph-reader/database/servicegraph/TINKERPOP-GRAPH-VARIABLES",
+            {"grant": "rw"},
+        )
+
+    def _arango_request(self, method: str, path: str, body: dict[str, object] | None = None) -> object:
+        if self.arango_host_url is None:
+            raise RuntimeError("ArangoDB host URL is not initialized")
+        token = base64.b64encode(f"root:{ARANGO_ROOT_PASSWORD}".encode()).decode()
+        request = urllib.request.Request(
+            f"{self.arango_host_url}{path}",
+            data=None if body is None else json.dumps(body).encode(),
+            headers={"authorization": f"Basic {token}", "content-type": "application/json"},
+            method=method,
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read())
+
+    def _install_gremlin(self) -> None:
+        self.run(
+            [
+                "helm", "upgrade", "--install", "gremlin", "deploy/helm/servicegraph-gremlin",
+                "--namespace", self.namespace, "--set", "fullnameOverride=servicegraph-gremlin",
+                "--set", "image.repository=extended-otel-servicegraph-gremlin", "--set", f"image.tag=e2e-{self.suffix}",
+                "--set", "image.pullPolicy=IfNotPresent", "--set", "arangodb.host=servicegraph-arangodb",
+                "--wait", "--timeout", "5m",
+            ],
+            timeout=360,
+        )
+
+    def _start_gremlin_forward(self) -> None:
+        local_port = _free_port()
+        process = subprocess.Popen(
+            [
+                "kubectl", "port-forward", "--namespace", self.namespace,
+                "service/servicegraph-gremlin", f"{local_port}:8182", "--address", "127.0.0.1",
+            ],
+            cwd=self.root,
+            env=self.command_environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.gremlin_forward = PortForward(process, local_port)
+
+        def ready() -> bool:
+            if process.poll() is not None:
+                output = process.stdout.read() if process.stdout is not None else ""
+                raise RuntimeError(f"Gremlin port-forward failed: {output}")
+            try:
+                with self.graph() as graph:
+                    graph.V().limit(1).count().next()
+                return True
+            except Exception:
+                return False
+
+        wait_for("Gremlin GraphBinary endpoint", 60, ready)
+
+    def _close_gremlin_forward(self) -> None:
+        if self.gremlin_forward is not None:
+            self.gremlin_forward.close()
+            self.gremlin_forward = None
 
     @staticmethod
     def _announce(message: str) -> None:
@@ -492,7 +489,7 @@ def wait_for[T](description: str, timeout_seconds: int, probe: Callable[[], T | 
             result = probe()
             if result:
                 return cast(T, result)
-        except (AssertionError, json.JSONDecodeError, OSError, urllib.error.URLError) as error:
+        except Exception as error:
             last_error = error
         time.sleep(2)
     detail = f": {last_error}" if last_error is not None else ""
@@ -503,11 +500,3 @@ def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
         return int(listener.getsockname()[1])
-
-
-def _serialize_key(value: object) -> bytes:
-    return cast(str, value).encode()
-
-
-def _serialize_event(value: object) -> bytes:
-    return json.dumps(cast(dict[str, object], value), separators=(",", ":")).encode()

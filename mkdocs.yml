@@ -67,7 +67,7 @@ nav:
   - Deployment:
       - Kubernetes: deployment-and-operations.md
       - Local Kind Environment: deployment/local-kind.md
-      - Elasticsearch Foundation: deployment/elasticsearch.md
+      - ArangoDB and Gremlin: deployment/arangodb-gremlin.md
   - Operations:
       - Monitoring: operations/monitoring.md
       - Upgrades and Recovery: operations/upgrades.md

@@ -9,10 +9,10 @@ assumes Kafka is already available.
 - Helm 3;
 - Kafka-compatible brokers reachable from the namespace;
 - two pre-created topics;
-- Elasticsearch 8.15 or a later 8.x release reachable from the namespace;
+- ArangoDB 3.12 reachable from the namespace;
 - an internal container registry;
 - shared persistent storage for Flink;
-- existing Kafka and Elasticsearch credential Secrets when authentication is
+- existing Kafka and ArangoDB writer/reader credential Secrets when authentication is
   enabled.
 
 The charts create standard Kubernetes resources and no CRDs. Workloads run as
@@ -33,11 +33,15 @@ docker build \
   .
 ```
 
-Build the access image and optional demo image:
+Build the indexer, Gremlin, and optional demo images:
 
 ```console
-docker build --file services/servicegraph-access/Dockerfile \
-  --tag registry.internal.example/extended-otel-servicegraph-access:0.3.0 .
+docker build --file services/servicegraph-indexer/Dockerfile \
+  --tag registry.internal.example/extended-otel-servicegraph-indexer:0.1.0 .
+
+docker build --file services/servicegraph-gremlin/Dockerfile \
+  --tag registry.internal.example/extended-otel-servicegraph-gremlin:0.1.0 \
+  services/servicegraph-gremlin
 
 docker build --file services/servicegraph-demo/Dockerfile \
   --tag registry.internal.example/extended-otel-servicegraph-demo:0.1.1 .
@@ -144,17 +148,18 @@ See [Collector configuration](configuration/collector.md), [Flink
 configuration](configuration/flink.md), and the [Helm values
 reference](reference/helm-values.md) before changing topology or state values.
 
-Create `internal-access-values.yaml` for the same Kafka contract and your
-existing Elasticsearch service. See [Elasticsearch projection and query
-API](deployment/elasticsearch.md) for endpoint, Secret, privilege, mapping,
-query, and immutable shard-count requirements.
+Create `internal-indexer-values.yaml` and `internal-gremlin-values.yaml` for the
+same Kafka contract and your existing ArangoDB service. See [ArangoDB and
+Gremlin](deployment/arangodb-gremlin.md) for credentials, privileges, topology,
+and traversal examples.
 
 ## Validate before installation
 
 ```console
 helm lint deploy/helm/servicegraph-collector
 helm lint deploy/helm/servicegraph-flink
-helm lint deploy/helm/servicegraph-access
+helm lint deploy/helm/servicegraph-indexer
+helm lint deploy/helm/servicegraph-gremlin
 
 helm template collection deploy/helm/servicegraph-collector \
   --namespace servicegraph-system \
@@ -164,9 +169,13 @@ helm template processing deploy/helm/servicegraph-flink \
   --namespace servicegraph-system \
   --values internal-flink-values.yaml
 
-helm template access deploy/helm/servicegraph-access \
+helm template indexer deploy/helm/servicegraph-indexer \
   --namespace servicegraph-system \
-  --values internal-access-values.yaml
+  --values internal-indexer-values.yaml
+
+helm template gremlin deploy/helm/servicegraph-gremlin \
+  --namespace servicegraph-system \
+  --values internal-gremlin-values.yaml
 ```
 
 Review rendered Secrets references, images, storage classes, RBAC, resource
@@ -207,27 +216,34 @@ Subsequent `helm upgrade` operations stop the active job with a savepoint,
 roll the runtime image and configuration, and restore the same job ID from
 that savepoint. Keep the cluster ID, fixed job ID, and state claim stable.
 
-## Install projection and query access
+## Install projection and traversal access
 
-The pre-install initializer creates or verifies the strict index before the
-projector and API start:
+The pre-install initializer creates or verifies the graph topology before the
+indexer starts. Gremlin uses separate credentials with read-only database
+access and `rw` limited to the provider's `TINKERPOP-GRAPH-VARIABLES`
+collection:
 
 ```console
-helm upgrade --install access deploy/helm/servicegraph-access \
+helm upgrade --install indexer deploy/helm/servicegraph-indexer \
   --namespace servicegraph-system \
-  --values internal-access-values.yaml \
+  --values internal-indexer-values.yaml \
+  --wait --timeout 5m
+
+helm upgrade --install gremlin deploy/helm/servicegraph-gremlin \
+  --namespace servicegraph-system \
+  --values internal-gremlin-values.yaml \
   --wait --timeout 5m
 ```
 
-Keep the API internal to the cluster or use a local port-forward:
+Keep Gremlin internal to the cluster or use a local port-forward:
 
 ```console
 kubectl port-forward --namespace servicegraph-system \
-  service/servicegraph-access-api 8080:8080
+  service/gremlin-servicegraph-gremlin 8182:8182
 ```
 
-Kibana may inspect the `servicegraph-elements` index directly. Product
-consumers should use the typed `POST /api/v1/elements/search` contract.
+Trusted clients use GraphBinary and traversal source `g`. There is no product
+HTTP API or custom query language.
 
 ## Install optional demo traffic
 
@@ -249,10 +265,10 @@ services are explicitly desired.
 4. Send paired client/server traces to the router.
 5. Confirm the metrics topic advances.
 6. Confirm node and edge upserts appear.
-7. Confirm the projector commits offsets and documents appear in Elasticsearch.
-8. Query expected nodes and edges through the access API.
+7. Confirm the indexer commits offsets and documents appear in ArangoDB.
+8. Traverse expected nodes and edges through Gremlin.
 9. Stop the contributing telemetry and wait for the configured TTL.
-10. Confirm Flink emits element deletes and Elasticsearch removes the
+10. Confirm Flink emits element deletes and ArangoDB removes the
     corresponding documents.
 
 See [Monitoring](operations/monitoring.md) for commands and production signals.
@@ -260,6 +276,6 @@ See [Monitoring](operations/monitoring.md) for commands and production signals.
 ## Uninstall behavior
 
 Helm deletes the Flink Deployments, Service, and configuration. Kubernetes HA
-ConfigMaps and the retained Flink claim can remain. Uninstalling the access
-chart does not delete the Elasticsearch index. Inspect and preserve checkpoints
+ConfigMaps and the retained Flink claim can remain. Uninstalling the indexer or
+Gremlin chart does not delete ArangoDB data. Inspect and preserve checkpoints
 or savepoints before deleting runtime resources or storage.
