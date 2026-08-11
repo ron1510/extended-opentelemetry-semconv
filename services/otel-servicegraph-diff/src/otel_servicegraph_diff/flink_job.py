@@ -30,13 +30,13 @@ from pyflink.datastream.functions import FlatMapFunction, KeyedProcessFunction, 
 from pyflink.datastream.state import StateTtlConfig, ValueState, ValueStateDescriptor
 from pyflink.java_gateway import get_gateway
 
-from extended_otel_semconv.graph.elements import (
+from extended_otel_servicegraph_engine.elements import (
     GraphContribution,
     GraphElementAggregateState,
     GraphElementEvent,
     apply_contribution,
 )
-from extended_otel_semconv.graph.interaction import (
+from extended_otel_servicegraph_engine.interaction import (
     InteractionState,
     apply_observation,
     contributions_for_transition,

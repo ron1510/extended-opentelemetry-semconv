@@ -7,7 +7,7 @@ test. Use CPython 3.12.
 
 ```console
 python -m pytest -m "not e2e"
-python -m extended_otel_semconv.codegen --check
+python -m extended_otel_semconv_codegen --check
 python -m ruff check .
 python -m pyright
 ```
@@ -15,8 +15,9 @@ python -m pyright
 The suite covers registry validation, deterministic generation, importable
 models, graph lifecycle behavior, Flink state/timers, demo traffic, ArangoDB
 topology initialization, document routing, edge-delete fanout, Kafka security,
-and commit-after-write behavior. PyFlink tests skip when `apache-flink` is not
-installed in the active environment.
+commit-after-write behavior, generated edge models, and typed Gremlin traversal
+validation. PyFlink tests skip when `apache-flink` is not installed in the
+active environment.
 
 Optional branch coverage has no numeric gate:
 
@@ -35,6 +36,8 @@ It publishes exact Flink schema-2 lifecycle envelopes and verifies:
 
 - node and edge projection;
 - incoming and outgoing GraphBinary traversals;
+- typed Pydantic vertex and edge reconstruction;
+- rejection of transformed Gremlin results;
 - complete replacement and duplicate replay;
 - Kafka offset commits after database writes;
 - read-only mutation rejection;

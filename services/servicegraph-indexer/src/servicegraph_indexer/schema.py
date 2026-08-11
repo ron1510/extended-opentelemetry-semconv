@@ -75,7 +75,7 @@ class GraphSchema(BaseModel):
 
 
 def load_graph_schema() -> GraphSchema:
-    resource = files("extended_otel_semconv").joinpath(SCHEMA_RESOURCE)
+    resource = files("servicegraph_indexer").joinpath(SCHEMA_RESOURCE)
     decoded = json.loads(resource.read_text(encoding="utf-8"))
     if not isinstance(decoded, dict):
         raise SchemaError(f"generated resource {SCHEMA_RESOURCE} must be an object")

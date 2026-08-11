@@ -9,12 +9,10 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /build
-COPY packages/extended-opentelemetry-semconv ./packages/extended-opentelemetry-semconv
 COPY services/servicegraph-indexer ./services/servicegraph-indexer
 RUN --mount=type=cache,target=/tmp/pip-cache \
     PIP_CACHE_DIR=/tmp/pip-cache python -m pip install \
-      ./services/servicegraph-indexer \
-      ./packages/extended-opentelemetry-semconv
+      ./services/servicegraph-indexer
 
 RUN groupadd --gid 10001 servicegraph \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin servicegraph

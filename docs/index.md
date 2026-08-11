@@ -49,7 +49,11 @@ consumers can apply commands idempotently.
 
 | Component | Responsibility |
 | --- | --- |
-| `packages/extended-opentelemetry-semconv` | Registry validation, generated entities, OTLP parsing, and pure graph transitions |
+| `packages/extended-opentelemetry-semconv-models` | Generated semantic entities and relationship models |
+| `packages/extended-opentelemetry-semconv-codegen` | Registry validation and deterministic generation |
+| `packages/extended-opentelemetry-servicegraph-engine` | Framework-independent graph lifecycle transitions |
+| `packages/extended-opentelemetry-servicegraph-ingest` | Collector service-graph metric ingestion |
+| `packages/extended-opentelemetry-semconv-gremlin` | Typed GraphBinary client |
 | `services/otel-servicegraph-diff` | PyFlink Kafka source, keyed state, timers, checkpoints, and event sink |
 | `services/servicegraph-indexer` | ArangoDB initializer and lifecycle indexer |
 | `services/servicegraph-gremlin` | Pinned read-only TinkerPop/ArangoDB runtime |

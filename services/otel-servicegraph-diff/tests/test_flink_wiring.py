@@ -17,9 +17,9 @@ pytest.importorskip("pyflink")
 from pyflink.datastream import RuntimeExecutionMode
 from pyflink.datastream.connectors.kafka import DeliveryGuarantee, KafkaOffsetResetStrategy
 
-from extended_otel_semconv.graph.elements import GraphContributionUpsert, GraphNode, apply_contribution
-from extended_otel_semconv.graph.interaction import observation_from_servicegraph_datapoint
-from extended_otel_semconv.graph.metrics import SERVICE_GRAPH_REQUEST_TOTAL
+from extended_otel_servicegraph_engine.elements import GraphContributionUpsert, GraphNode, apply_contribution
+from extended_otel_servicegraph_engine.metrics import SERVICE_GRAPH_REQUEST_TOTAL
+from extended_otel_servicegraph_ingest.interaction import observation_from_servicegraph_datapoint
 from otel_servicegraph_diff import flink_job
 from otel_servicegraph_diff.config import InteractionDiffConfig
 from otel_servicegraph_diff.runner import ParsedObservation

@@ -57,6 +57,8 @@ nav:
       - Your First Custom Entity: getting-started/custom-entity.md
   - Concepts:
       - Semantic Entity Model: concepts/semantic-model.md
+      - Python Package Architecture: concepts/package-architecture.md
+      - Typed Gremlin Client: concepts/typed-gremlin-client.md
       - Graph Element Lifecycle: concepts/graph-element-lifecycle.md
       - Runtime Architecture: architecture.md
   - Configuration:

@@ -39,7 +39,9 @@ From the repository root on Windows:
 py -3.12 -m venv .venv312
 
 .\.venv312\Scripts\python.exe -m pip install `
-  -e packages\extended-opentelemetry-semconv `
+  -e packages\extended-opentelemetry-semconv-models `
+  -e packages\extended-opentelemetry-servicegraph-engine `
+  -e packages\extended-opentelemetry-servicegraph-ingest `
   -e services\otel-servicegraph-diff
 ```
 
@@ -49,7 +51,9 @@ On Linux or macOS:
 python3.12 -m venv .venv312
 
 ./.venv312/bin/python -m pip install \
-  -e packages/extended-opentelemetry-semconv \
+  -e packages/extended-opentelemetry-semconv-models \
+  -e packages/extended-opentelemetry-servicegraph-engine \
+  -e packages/extended-opentelemetry-servicegraph-ingest \
   -e services/otel-servicegraph-diff
 ```
 

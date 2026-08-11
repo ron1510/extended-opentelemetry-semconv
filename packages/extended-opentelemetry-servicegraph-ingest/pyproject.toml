@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extended-opentelemetry-servicegraph-ingest"
+version = "0.1.0"
+description = "Collector service-graph metric parsing and semantic normalization."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "extended-opentelemetry-semconv-models>=0.2.0,<0.3.0",
+  "extended-opentelemetry-servicegraph-engine>=0.1.0,<0.2.0",
+  "opentelemetry-proto==1.44.0",
+  "pydantic==2.13.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -6,11 +6,11 @@ customization mechanism for the project.
 ## Layout
 
 Place YAML files anywhere below
-`packages/extended-opentelemetry-semconv/model/extensions`. Files are loaded
+`packages/extended-opentelemetry-semconv-codegen/model/extensions`. Files are loaded
 recursively in sorted order. Organize them by domain:
 
 ```text
-packages/extended-opentelemetry-semconv/model/extensions/
+packages/extended-opentelemetry-semconv-codegen/model/extensions/
   app/
     entities.yaml
   business/
@@ -113,7 +113,7 @@ and future raw-trace pipelines.
 Run:
 
 ```console
-python -m extended_otel_semconv.codegen
+python -m extended_otel_semconv_codegen
 ```
 
 The code-generation module produces:
@@ -150,7 +150,7 @@ needs instance-level identity and the pipeline is sized accordingly.
 Use check mode before committing:
 
 ```console
-python -m extended_otel_semconv.codegen --check
+python -m extended_otel_semconv_codegen --check
 python -m pytest -m "not e2e"
 ```
 
@@ -176,12 +176,12 @@ dimensions after regeneration and deployment without storage-specific code.
 ## Upgrade the upstream snapshot
 
 The package vendors one exact OpenTelemetry model and records its source in
-`packages/extended-opentelemetry-semconv/upstream/otel-semconv.lock.json`.
+`packages/extended-opentelemetry-semconv-codegen/upstream/otel-semconv.lock.json`.
 
 1. Select an exact semantic-conventions release tag.
 2. Extract only its `model` directory into a new versioned directory.
 3. Update
-   `packages/extended-opentelemetry-semconv/upstream/otel-semconv.lock.json`.
+   `packages/extended-opentelemetry-semconv-codegen/upstream/otel-semconv.lock.json`.
 4. Update `UPSTREAM_MODEL` in both generators and related tests.
 5. Delete extensions that the new upstream version now owns.
 6. Regenerate all artifacts.

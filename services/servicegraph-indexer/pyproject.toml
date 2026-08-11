@@ -8,7 +8,6 @@ version = "0.1.0"
 description = "ArangoDB current-state indexer for service graph elements."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "extended-opentelemetry-semconv>=0.1.0,<0.2.0",
   "kafka-python-ng==2.2.3",
   "opentelemetry-api==1.44.0",
   "pydantic-settings==2.14.2",
@@ -21,3 +20,6 @@ servicegraph-indexer = "servicegraph_indexer.indexer:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+servicegraph_indexer = ["metadata/*.json"]

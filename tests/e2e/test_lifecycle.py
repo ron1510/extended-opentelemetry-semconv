@@ -7,6 +7,9 @@ import time
 import pytest
 from gremlin_python.driver.protocol import GremlinServerError
 
+from extended_otel_semconv import Service, ServiceCallsServiceEdge
+from extended_otel_semconv.edges import edge_id as semantic_edge_id
+from extended_otel_semconv_gremlin import UnsupportedSemanticTraversalError
 from tests.e2e.environment import E2EEnvironment, wait_for
 
 
@@ -15,7 +18,7 @@ def test_schema2_events_are_projected_and_traversable(e2e_environment: E2EEnviro
     observed_at = time.time_ns()
     storefront_id = "service:storefront"
     checkout_id = "service:checkout-api"
-    edge_id = "edge:storefront-calls-checkout"
+    edge_id = semantic_edge_id(storefront_id, "calls", checkout_id)
     events = (
         _upsert(storefront_id, _service(storefront_id, "storefront", "1.0"), observed_at, "storefront-v1"),
         _upsert(checkout_id, _service(checkout_id, "checkout-api", "2.4"), observed_at, "checkout-v1"),
@@ -53,6 +56,30 @@ def test_schema2_events_are_projected_and_traversable(e2e_environment: E2EEnviro
             "storefront"
         ]
         assert graph.E().has_label("calls").values("service_graph_request_total").to_list() == [12.0]
+
+    with e2e_environment.semantic_client() as client:
+        services = client.query(lambda g: g.V().has_label("service").order().by("service_name"))
+        calls = client.query(lambda g: g.E().has_label("calls"))
+        dependencies = client.query(lambda g: g.V().has("service_name", "storefront").out("calls"))
+
+        assert all(isinstance(service, Service) for service in services)
+        assert [service.service_name for service in services if isinstance(service, Service)] == [
+            "checkout-api",
+            "storefront",
+        ]
+        assert len(calls) == 1
+        assert isinstance(calls[0], ServiceCallsServiceEdge)
+        assert calls[0].metrics["service_graph.request.total"] == 12.0
+        assert len(dependencies) == 1
+        assert isinstance(dependencies[0], Service)
+        assert dependencies[0].service_name == "checkout-api"
+
+        with pytest.raises(UnsupportedSemanticTraversalError, match="values"):
+            client.query(lambda g: g.V().values("service_name"))
+        with pytest.raises(UnsupportedSemanticTraversalError, match="count"):
+            client.query(lambda g: g.V().count())
+        with pytest.raises(UnsupportedSemanticTraversalError, match="project"):
+            client.query(lambda g: g.V().project("name").by("service_name"))
 
     replacement = _upsert(checkout_id, _service(checkout_id, "checkout-api", "2.5"), observed_at + 1, "checkout-v2")
     e2e_environment.produce_events((replacement, replacement))

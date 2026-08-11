@@ -24,6 +24,8 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource
 from kafka import KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
 
+from extended_otel_semconv_gremlin import SemanticGremlinClient
+
 KIND_NODE_IMAGE = "kindest/node:v1.32.2"
 REDPANDA_IMAGE = "docker.redpanda.com/redpandadata/redpanda:v26.1.6"
 ARANGODB_IMAGE = "arangodb:3.12.9.4"
@@ -195,9 +197,17 @@ class E2EEnvironment:
             raise RuntimeError("Gremlin port-forward is not initialized")
         connection = DriverRemoteConnection(f"ws://127.0.0.1:{forward.local_port}/gremlin", "g")
         try:
-            yield traversal().with_remote(connection)
+            yield traversal().with_(connection)
         finally:
             connection.close()
+
+    @contextmanager
+    def semantic_client(self) -> Generator[SemanticGremlinClient]:
+        forward = self.gremlin_forward
+        if forward is None:
+            raise RuntimeError("Gremlin port-forward is not initialized")
+        with SemanticGremlinClient(f"ws://127.0.0.1:{forward.local_port}/gremlin") as client:
+            yield client
 
     def restart_projection(self) -> None:
         self._close_gremlin_forward()

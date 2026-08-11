@@ -13,14 +13,15 @@ pytest.importorskip("pyflink")
 from pyflink.datastream.functions import KeyedProcessFunction, TimeDomain
 from pyflink.datastream.state import ValueState
 
-from extended_otel_semconv.graph.elements import (
+from extended_otel_servicegraph_engine.elements import (
     GraphContributionRetract,
     GraphContributionUpsert,
     GraphElementAggregateState,
     GraphElementUpsertEvent,
 )
-from extended_otel_semconv.graph.interaction import InteractionState, observation_from_servicegraph_datapoint
-from extended_otel_semconv.graph.metrics import SERVICE_GRAPH_REQUEST_TOTAL
+from extended_otel_servicegraph_engine.interaction import InteractionState
+from extended_otel_servicegraph_engine.metrics import SERVICE_GRAPH_REQUEST_TOTAL
+from extended_otel_servicegraph_ingest.interaction import observation_from_servicegraph_datapoint
 from otel_servicegraph_diff.flink_job import (
     Counter,
     OnTimerProcessContext,

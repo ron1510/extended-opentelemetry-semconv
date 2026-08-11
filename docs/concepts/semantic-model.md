@@ -8,9 +8,9 @@ relationships.
 The effective registry is a merge of:
 
 1. the pinned OpenTelemetry semantic-conventions model under
-   `packages/extended-opentelemetry-semconv/upstream/otel-semconv/v1.43.0/model`;
+   `packages/extended-opentelemetry-semconv-codegen/upstream/otel-semconv/v1.43.0/model`;
 2. project extensions under
-   `packages/extended-opentelemetry-semconv/model/extensions`.
+   `packages/extended-opentelemetry-semconv-codegen/model/extensions`.
 
 Extensions may reference upstream attributes and entities, but may not redefine
 them. The upstream snapshot is build input and is never downloaded at runtime.
@@ -75,12 +75,20 @@ type is derived from the Collector's `connection_type`:
 
 Only a relationship explicitly allowed by the registry is emitted.
 
+Code generation creates a frozen concrete Pydantic edge class for every
+relationship definition. For example, `relationship.service_calls_service`
+becomes `ServiceCallsServiceEdge`. Each class declares its relationship and
+endpoint semantic types, validates endpoint IDs, and computes the same
+deterministic edge ID used by Flink. Edge metrics and structural attributes are
+preserved without embedding endpoint entities.
+
 ## From attributes to the live graph
 
 The generation pipeline connects the model to runtime behavior:
 
-1. `python -m extended_otel_semconv.codegen` validates and merges both registry layers.
-2. It generates typed entity parsers and packaged relationship metadata.
+1. `python -m extended_otel_semconv_codegen` validates and merges both registry layers.
+2. It generates typed entity parsers, concrete edge models, lookup registries,
+   and packaged relationship metadata.
 3. The same operation selects scalar attributes used by service-graph relationships.
 4. Collector backends include those dimensions in their metrics.
 5. Flink interprets client and server dimensions through the generated package.

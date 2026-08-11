@@ -8,7 +8,11 @@ packages:
 ```console
 python -m venv .venv
 python -m pip install -e ".[dev,docs]"
-python -m pip install -e packages/extended-opentelemetry-semconv
+python -m pip install -e packages/extended-opentelemetry-semconv-models
+python -m pip install -e packages/extended-opentelemetry-semconv-codegen
+python -m pip install -e packages/extended-opentelemetry-servicegraph-engine
+python -m pip install -e packages/extended-opentelemetry-servicegraph-ingest
+python -m pip install -e packages/extended-opentelemetry-semconv-gremlin
 python -m pip install -e services/otel-servicegraph-diff
 python -m pip install -e services/servicegraph-demo
 python -m pip install -e services/servicegraph-indexer
@@ -23,7 +27,7 @@ Registry source is hand-written; generated Python, relationship metadata, and
 Collector dimensions are committed:
 
 ```console
-python -m extended_otel_semconv.codegen
+python -m extended_otel_semconv_codegen
 ```
 
 Never manually patch generated modules or dimensions. Change registry source
@@ -32,7 +36,7 @@ and regenerate.
 ## Validation
 
 ```console
-python -m extended_otel_semconv.codegen --check
+python -m extended_otel_semconv_codegen --check
 python -m ruff check .
 python -m pyright
 python -m pytest -m "not e2e"

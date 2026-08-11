@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "apache-flink==2.2.1",
-  "extended-opentelemetry-semconv>=0.1.0,<0.2.0",
+  "extended-opentelemetry-semconv-models>=0.2.0,<0.3.0",
+  "extended-opentelemetry-servicegraph-engine>=0.1.0,<0.2.0",
+  "extended-opentelemetry-servicegraph-ingest>=0.1.0,<0.2.0",
   "pydantic-settings==2.14.2",
 ]
 

@@ -17,7 +17,7 @@ The deployment is split into three independent charts:
   on Java 17 and exposes an internal Service on port `8182`.
 
 The generated schema is committed at
-`packages/extended-opentelemetry-semconv/src/extended_otel_semconv/metadata/arangodb-graph-schema.json`.
+`services/servicegraph-indexer/src/servicegraph_indexer/metadata/arangodb-graph-schema.json`.
 Normal code generation and `--check` own it. The same content is packaged in
 the Gremlin chart so provider topology cannot drift from indexer routing.
 
@@ -121,27 +121,30 @@ kubectl port-forward --namespace servicegraph-system `
   service/gremlin-servicegraph-gremlin 8182:8182
 ```
 
-Use GraphBinary through `gremlinpython==3.8.1`:
+Install and use the typed GraphBinary client:
+
+```console
+pip install extended-opentelemetry-semconv-gremlin==0.1.0
+```
 
 ```python
-from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
-from gremlin_python.process.anonymous_traversal import traversal
+from extended_otel_semconv_gremlin import SemanticGremlinClient
 
-connection = DriverRemoteConnection("ws://127.0.0.1:8182/gremlin", "g")
-try:
-    g = traversal().with_remote(connection)
-    checkout = g.V().has_label("service").has("service_name", "checkout").to_list()
-    dependencies = (
-        g.V()
+with SemanticGremlinClient("ws://127.0.0.1:8182/gremlin") as client:
+    checkout = client.query(
+        lambda g: g.V().has_label("service").has("service_name", "checkout")
+    )
+    dependencies = client.query(
+        lambda g: g.V()
         .has_label("service")
         .has("service_name", "checkout")
         .out("calls")
-        .value_map(True)
-        .to_list()
     )
-finally:
-    connection.close()
 ```
+
+The typed client accepts only element-producing traversals and returns
+generated semantic entity or edge models. Use `gremlin-python` directly for
+intentional scalar, aggregate, map, or path results.
 
 Labels are generated from semantic types: `service.instance` becomes
 `service_instance`, `k8s.pod` becomes `k8s_pod`, and relationship `calls`

@@ -7,14 +7,14 @@ from typing import Annotated, Literal, cast
 
 from pydantic import Field, RootModel, ValidationError
 
-from extended_otel_semconv.graph.interaction import (
+from extended_otel_servicegraph_engine.interaction import (
     FrozenModel,
     InteractionDlqEvent,
     InteractionObservation,
     JsonValue,
-    observation_from_metric_point,
 )
-from extended_otel_semconv.graph.metrics import (
+from extended_otel_servicegraph_ingest.interaction import observation_from_metric_point
+from extended_otel_servicegraph_ingest.metrics import (
     contains_only_ignored_service_graph_metrics,
     parse_metrics_json_document_with_names,
 )
