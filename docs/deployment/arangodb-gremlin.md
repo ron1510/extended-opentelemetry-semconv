@@ -124,11 +124,11 @@ kubectl port-forward --namespace servicegraph-system `
 Install and use the typed GraphBinary client:
 
 ```console
-pip install extended-opentelemetry-semconv-gremlin==0.1.0
+pip install "extended-opentelemetry-semconv[gremlin]==0.4.0"
 ```
 
 ```python
-from extended_otel_semconv_gremlin import SemanticGremlinClient
+from extended_otel_semconv.gremlin import SemanticGremlinClient
 
 with SemanticGremlinClient("ws://127.0.0.1:8182/gremlin") as client:
     checkout = client.query(

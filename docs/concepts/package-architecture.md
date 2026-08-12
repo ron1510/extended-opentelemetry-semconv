@@ -1,52 +1,44 @@
 # Python Package Architecture
 
-The Python implementation is split by installation reason and dependency
-direction. Applications install only the layers they execute.
+Python ownership follows deployment and installation boundaries while keeping
+domain responsibilities separated into internal modules.
 
 ```text
-codegen --generates--> models <-- engine <-- ingest
-                          ^
-                          |
-                       gremlin
+tools/semconv_codegen --generates--> extended-opentelemetry-semconv
+                                         ^
+                                         |
+                         otel-servicegraph-diff
 ```
 
-## Models
+## Semantic SDK
 
-`extended-opentelemetry-semconv-models` exposes `extended_otel_semconv`.
-It contains generated entities and edges, deterministic identities, strict
-reconstruction, and runtime relationship metadata. Its only runtime dependency
-is Pydantic.
+`extended-opentelemetry-semconv` exposes `extended_otel_semconv`. It contains
+generated entities and edges, deterministic identities, strict reconstruction,
+and runtime relationship metadata. Its base installation depends only on
+Pydantic.
 
-## Codegen
+The optional `gremlin` extra exposes `extended_otel_semconv.gremlin`. This
+module validates element-preserving traversals and reconstructs GraphBinary
+results as semantic models. The semantic core never imports `gremlinpython`.
 
-`extended-opentelemetry-semconv-codegen` exposes
-`extended_otel_semconv_codegen`. It owns the pinned upstream registry, local
-extensions, validation, model rendering, Collector dimensions, relationship
-metadata, and ArangoDB topology generation. It is never required in runtime
-images.
+## Flink application
 
-## Engine
+`otel-servicegraph-diff` owns its graph lifecycle engine and Collector ingestion
+adapters under `otel_servicegraph_diff.engine` and
+`otel_servicegraph_diff.ingest`. These remain distinct source modules but are
+released and deployed only with the Flink application.
 
-`extended-opentelemetry-servicegraph-engine` exposes
-`extended_otel_servicegraph_engine`. It owns neutral metric and observation
-contracts, interaction state, contributor aggregation, staleness, and graph
-element lifecycle events. It has no Flink, Kafka, protobuf, or database
-dependency.
+The engine owns neutral observations, interaction state, contributor
+aggregation, staleness, and graph-element lifecycle events. Ingest owns
+OpenTelemetry protobuf parsing and service-graph normalization.
 
-## Ingest
+## Repository tooling
 
-`extended-opentelemetry-servicegraph-ingest` exposes
-`extended_otel_servicegraph_ingest`. It parses Collector service-graph metrics,
-extracts semantic entities and relationships, and creates engine observations.
-OpenTelemetry protobuf is isolated to this package.
+`tools.semconv_codegen` owns the pinned upstream registry, local extensions,
+validation, model rendering, Collector dimensions, relationship metadata, and
+ArangoDB topology generation. It is contributor tooling and is never installed
+in runtime images.
 
-## Gremlin
-
-`extended-opentelemetry-semconv-gremlin` exposes
-`extended_otel_semconv_gremlin`. It validates element-preserving traversals and
-reconstructs GraphBinary results as models. It is the only package that depends
-on `gremlinpython`.
-
-Architectural tests inspect imports in every package. Models cannot import an
-adapter, the engine cannot import ingestion, and codegen cannot become a runtime
-dependency.
+Architectural tests enforce that the semantic core does not import Gremlin,
+Flink does not import repository tooling, and codegen does not import runtime
+packages.

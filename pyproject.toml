@@ -10,12 +10,14 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = [
+  "datamodel-code-generator==0.71.0",
   "hypothesis==6.158.0",
   "httpx==0.28.1",
   "gremlinpython==3.8.1",
   "pyright==1.1.411",
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
+  "PyYAML==6.0.3",
   "ruff==0.15.22",
 ]
 docs = [
@@ -32,31 +34,25 @@ markers = [
   "arangodb: starts disposable ArangoDB and Gremlin containers",
 ]
 pythonpath = [
-  "packages/extended-opentelemetry-semconv-models/src",
-  "packages/extended-opentelemetry-semconv-codegen/src",
-  "packages/extended-opentelemetry-servicegraph-engine/src",
-  "packages/extended-opentelemetry-servicegraph-ingest/src",
-  "packages/extended-opentelemetry-semconv-gremlin/src",
+  ".",
+  "packages/extended-opentelemetry-semconv/src",
   "services/otel-servicegraph-diff/src",
   "services/servicegraph-demo/src",
   "services/servicegraph-indexer/src",
 ]
 testpaths = [
-  "packages/extended-opentelemetry-semconv-models/tests",
-  "packages/extended-opentelemetry-semconv-codegen/tests",
-  "packages/extended-opentelemetry-servicegraph-engine/tests",
-  "packages/extended-opentelemetry-servicegraph-ingest/tests",
-  "packages/extended-opentelemetry-semconv-gremlin/tests",
+  "packages/extended-opentelemetry-semconv/tests",
   "services/otel-servicegraph-diff/tests",
   "services/servicegraph-demo/tests",
   "services/servicegraph-indexer/tests",
+  "tools/semconv_codegen/tests",
   "tests/e2e",
 ]
 
 [tool.coverage.run]
 branch = true
 omit = [
-  "packages/extended-opentelemetry-semconv-models/src/extended_otel_semconv/generated/*",
+  "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/generated/*",
 ]
 
 [tool.coverage.report]
@@ -67,7 +63,7 @@ skip_covered = true
 exclude = [
   ".pr-work",
   ".tmp",
-  "packages/extended-opentelemetry-semconv-models/src/extended_otel_semconv/generated",
+  "packages/extended-opentelemetry-semconv/src/extended_otel_semconv/generated",
 ]
 line-length = 120
 target-version = "py312"
@@ -79,42 +75,29 @@ ignore = ["RUF043"]
 [tool.ruff.lint.isort]
 known-first-party = [
   "extended_otel_semconv",
-  "extended_otel_semconv_codegen",
-  "extended_otel_semconv_gremlin",
-  "extended_otel_servicegraph_engine",
-  "extended_otel_servicegraph_ingest",
   "otel_servicegraph_diff",
   "servicegraph_demo",
   "servicegraph_indexer",
+  "tools",
 ]
 
 [tool.pyright]
 include = [
-  "packages/extended-opentelemetry-semconv-models/src",
-  "packages/extended-opentelemetry-semconv-models/tests",
-  "packages/extended-opentelemetry-semconv-codegen/src",
-  "packages/extended-opentelemetry-semconv-codegen/tests",
-  "packages/extended-opentelemetry-servicegraph-engine/src",
-  "packages/extended-opentelemetry-servicegraph-engine/tests",
-  "packages/extended-opentelemetry-servicegraph-ingest/src",
-  "packages/extended-opentelemetry-servicegraph-ingest/tests",
-  "packages/extended-opentelemetry-semconv-gremlin/src",
-  "packages/extended-opentelemetry-semconv-gremlin/tests",
+  "packages/extended-opentelemetry-semconv/src",
+  "packages/extended-opentelemetry-semconv/tests",
   "services/otel-servicegraph-diff/src",
   "services/otel-servicegraph-diff/tests",
   "services/servicegraph-demo/src",
   "services/servicegraph-demo/tests",
   "services/servicegraph-indexer/src",
   "services/servicegraph-indexer/tests",
+  "tools/semconv_codegen",
   "conftest.py",
   "tests/e2e",
 ]
 extraPaths = [
-  "packages/extended-opentelemetry-semconv-models/src",
-  "packages/extended-opentelemetry-semconv-codegen/src",
-  "packages/extended-opentelemetry-servicegraph-engine/src",
-  "packages/extended-opentelemetry-servicegraph-ingest/src",
-  "packages/extended-opentelemetry-semconv-gremlin/src",
+  ".",
+  "packages/extended-opentelemetry-semconv/src",
   "services/otel-servicegraph-diff/src",
   "services/servicegraph-demo/src",
   "services/servicegraph-indexer/src",

@@ -8,9 +8,9 @@ relationships.
 The effective registry is a merge of:
 
 1. the pinned OpenTelemetry semantic-conventions model under
-   `packages/extended-opentelemetry-semconv-codegen/upstream/otel-semconv/v1.43.0/model`;
+   `tools/semconv_codegen/upstream/otel-semconv/v1.43.0/model`;
 2. project extensions under
-   `packages/extended-opentelemetry-semconv-codegen/model/extensions`.
+   `tools/semconv_codegen/model/extensions`.
 
 Extensions may reference upstream attributes and entities, but may not redefine
 them. The upstream snapshot is build input and is never downloaded at runtime.
@@ -40,15 +40,18 @@ An entity definition has:
       role: identifying
 ```
 
-The generated class is immutable, validates its fields with Pydantic, and
+The generated class is immutable, validates exact registry types with Pydantic, and
 constructs a deterministic ID from identifying values:
 
 ```text
 app.endpoint:checkout-api:shop:POST:%2Fcheckout%2F%7Bcart_id%7D
 ```
 
-Missing any identifying value means that entity is not observed. Optional
-attributes enrich an entity but do not change its identity.
+Missing any identifying key means that entity is not observed. Present but
+empty, incorrectly typed, or invalid enum values are rejected. Optional
+attributes enrich an entity but do not change its identity. Array and template
+attributes retain their registry types; template fields such as
+`k8s.pod.label.<key>` are exposed as canonical dotted attributes.
 
 ## Relationships
 
@@ -86,14 +89,19 @@ preserved without embedding endpoint entities.
 
 The generation pipeline connects the model to runtime behavior:
 
-1. `python -m extended_otel_semconv_codegen` validates and merges both registry layers.
-2. It generates typed entity parsers, concrete edge models, lookup registries,
-   and packaged relationship metadata.
-3. The same operation selects scalar attributes used by service-graph relationships.
-4. Collector backends include those dimensions in their metrics.
-5. Flink interprets client and server dimensions through the generated package.
-6. Interaction events carry normalized graph nodes and edges.
-7. Generic consumers can display custom types without embedding registry logic.
+1. `python -m tools.semconv_codegen` validates and merges both registry layers.
+2. It builds a strict semantic intermediate representation and commits
+   `semantic-entities.schema.json`.
+3. Pinned `datamodel-code-generator` turns that JSON Schema into static Pydantic
+   field classes, while the project generator adds semantic IDs, registries,
+   and concrete edge models.
+4. The generated Python remains static, importable, and IDE-friendly; no model
+   generation or registry parsing occurs at runtime.
+5. The same operation selects scalar attributes used by service-graph relationships.
+6. Collector backends include those dimensions in their metrics.
+7. Flink interprets client and server dimensions through the generated package.
+8. Interaction events carry normalized graph nodes and edges.
+9. Generic consumers can display custom types without embedding registry logic.
 
 Template attributes ending in `.label`, `.annotation`, or `.selector` and
 non-scalar attributes are excluded from Collector dimensions.

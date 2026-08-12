@@ -30,20 +30,20 @@ from pyflink.datastream.functions import FlatMapFunction, KeyedProcessFunction, 
 from pyflink.datastream.state import StateTtlConfig, ValueState, ValueStateDescriptor
 from pyflink.java_gateway import get_gateway
 
-from extended_otel_servicegraph_engine.elements import (
+from otel_servicegraph_diff.config import InteractionDiffConfig, interaction_diff_config_from_env
+from otel_servicegraph_diff.engine.elements import (
     GraphContribution,
     GraphElementAggregateState,
     GraphElementEvent,
     apply_contribution,
 )
-from extended_otel_servicegraph_engine.interaction import (
+from otel_servicegraph_diff.engine.interaction import (
     InteractionState,
     apply_observation,
     contributions_for_transition,
     retract_contributions,
     state_has_expired,
 )
-from otel_servicegraph_diff.config import InteractionDiffConfig, interaction_diff_config_from_env
 from otel_servicegraph_diff.runner import (
     ParsedObservation,
     RejectedRecord,

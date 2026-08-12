@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import TypeAdapter
 
-from extended_otel_servicegraph_engine.elements import (
+from otel_servicegraph_diff.engine.elements import (
     GRAPH_REQUEST_FAILED_TOTAL,
     GRAPH_REQUEST_TOTAL,
     GraphContributionRetract,
@@ -14,7 +14,7 @@ from extended_otel_servicegraph_engine.elements import (
     apply_contribution,
     edge_id,
 )
-from extended_otel_servicegraph_engine.interaction import (
+from otel_servicegraph_diff.engine.interaction import (
     InteractionState,
     apply_observation,
     build_interaction_id,
@@ -22,8 +22,8 @@ from extended_otel_servicegraph_engine.interaction import (
     retract_contributions,
     state_has_expired,
 )
-from extended_otel_servicegraph_engine.metrics import SERVICE_GRAPH_REQUEST_TOTAL
-from extended_otel_servicegraph_ingest.interaction import observation_from_servicegraph_datapoint
+from otel_servicegraph_diff.engine.metrics import SERVICE_GRAPH_REQUEST_TOTAL
+from otel_servicegraph_diff.ingest.interaction import observation_from_servicegraph_datapoint
 
 
 def test_node_contributors_complete_each_others_optional_attributes() -> None:

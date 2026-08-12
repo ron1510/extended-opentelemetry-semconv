@@ -1,9 +1,9 @@
 # Typed Gremlin Client
 
-Install the models and typed GraphBinary client packages:
+Install the semantic SDK with typed GraphBinary support:
 
 ```console
-pip install extended-opentelemetry-semconv-gremlin==0.1.0
+pip install "extended-opentelemetry-semconv[gremlin]==0.4.0"
 ```
 
 `SemanticGremlinClient` executes traversals whose final traversers are vertices
@@ -12,7 +12,7 @@ generated Pydantic model for each semantic type:
 
 ```python
 from extended_otel_semconv import Service, ServiceCallsServiceEdge
-from extended_otel_semconv_gremlin import SemanticGremlinClient
+from extended_otel_semconv.gremlin import SemanticGremlinClient
 
 with SemanticGremlinClient("ws://servicegraph-gremlin:8182/gremlin") as client:
     dependencies = client.query(
@@ -44,7 +44,7 @@ rejects these before network submission with
 `UnsupportedSemanticTraversalError`:
 
 ```python
-from extended_otel_semconv_gremlin import UnsupportedSemanticTraversalError
+from extended_otel_semconv.gremlin import UnsupportedSemanticTraversalError
 
 with SemanticGremlinClient("ws://servicegraph-gremlin:8182/gremlin") as client:
     try:

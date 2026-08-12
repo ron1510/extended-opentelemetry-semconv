@@ -8,11 +8,7 @@ packages:
 ```console
 python -m venv .venv
 python -m pip install -e ".[dev,docs]"
-python -m pip install -e packages/extended-opentelemetry-semconv-models
-python -m pip install -e packages/extended-opentelemetry-semconv-codegen
-python -m pip install -e packages/extended-opentelemetry-servicegraph-engine
-python -m pip install -e packages/extended-opentelemetry-servicegraph-ingest
-python -m pip install -e packages/extended-opentelemetry-semconv-gremlin
+python -m pip install -e "packages/extended-opentelemetry-semconv[gremlin]"
 python -m pip install -e services/otel-servicegraph-diff
 python -m pip install -e services/servicegraph-demo
 python -m pip install -e services/servicegraph-indexer
@@ -23,20 +19,22 @@ semantic package and tools required by the relevant tests.
 
 ## Generated files
 
-Registry source is hand-written; generated Python, relationship metadata, and
-Collector dimensions are committed:
+Registry source is hand-written; the semantic JSON Schema, static Pydantic
+Python, relationship metadata, and Collector dimensions are committed:
 
 ```console
-python -m extended_otel_semconv_codegen
+python -m tools.semconv_codegen
 ```
 
-Never manually patch generated modules or dimensions. Change registry source
-and regenerate.
+The contributor dependency `datamodel-code-generator==0.71.0` is pinned in the
+normal `dev` optional dependency. It is never imported by the published SDK.
+Never manually patch generated modules, schemas, or dimensions. Change registry
+source and regenerate.
 
 ## Validation
 
 ```console
-python -m extended_otel_semconv_codegen --check
+python -m tools.semconv_codegen --check
 python -m ruff check .
 python -m pyright
 python -m pytest -m "not e2e"

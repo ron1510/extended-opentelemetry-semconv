@@ -24,7 +24,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource
 from kafka import KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
 
-from extended_otel_semconv_gremlin import SemanticGremlinClient
+from extended_otel_semconv.gremlin import SemanticGremlinClient
 
 KIND_NODE_IMAGE = "kindest/node:v1.32.2"
 REDPANDA_IMAGE = "docker.redpanda.com/redpandadata/redpanda:v26.1.6"

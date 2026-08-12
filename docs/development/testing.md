@@ -7,7 +7,7 @@ test. Use CPython 3.12.
 
 ```console
 python -m pytest -m "not e2e"
-python -m extended_otel_semconv_codegen --check
+python -m tools.semconv_codegen --check
 python -m ruff check .
 python -m pyright
 ```

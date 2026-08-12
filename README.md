@@ -20,16 +20,12 @@ OTLP traces
 
 The repository contains:
 
-- `packages/extended-opentelemetry-semconv-models`: generated Pydantic entities
-  and relationships.
-- `packages/extended-opentelemetry-semconv-codegen`: registry sources,
-  validation, and deterministic generation.
-- `packages/extended-opentelemetry-servicegraph-engine`: pure interaction and
-  graph-element lifecycle transitions.
-- `packages/extended-opentelemetry-servicegraph-ingest`: Collector metric
-  parsing and semantic normalization.
-- `packages/extended-opentelemetry-semconv-gremlin`: typed GraphBinary client.
-- `services/otel-servicegraph-diff`: validated settings and PyFlink wiring.
+- `packages/extended-opentelemetry-semconv`: generated Pydantic entities,
+  relationships, and optional typed GraphBinary access.
+- `tools/semconv_codegen`: registry sources, validation, and deterministic
+  generation.
+- `services/otel-servicegraph-diff`: Collector metric ingestion, graph
+  lifecycle engine, validated settings, and PyFlink wiring.
 - `services/servicegraph-demo`: optional live synthetic OTLP traffic.
 - `services/servicegraph-indexer`: ArangoDB topology initialization and Kafka
   lifecycle projection.
@@ -66,7 +62,7 @@ Start with:
 ## Validation
 
 ```powershell
-python -m extended_otel_semconv_codegen --check
+python -m tools.semconv_codegen --check
 python -m mkdocs build --strict
 python -m ruff check .
 python -m pyright

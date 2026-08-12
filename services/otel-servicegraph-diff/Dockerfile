@@ -24,16 +24,12 @@ ARG PIP_TRUSTED_HOST
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 
-COPY packages/extended-opentelemetry-semconv-models ./packages/extended-opentelemetry-semconv-models
-COPY packages/extended-opentelemetry-servicegraph-engine ./packages/extended-opentelemetry-servicegraph-engine
-COPY packages/extended-opentelemetry-servicegraph-ingest ./packages/extended-opentelemetry-servicegraph-ingest
+COPY packages/extended-opentelemetry-semconv ./packages/extended-opentelemetry-semconv
 COPY services/otel-servicegraph-diff ./services/otel-servicegraph-diff
 RUN --mount=type=cache,target=/tmp/pip-cache \
     PIP_CACHE_DIR=/tmp/pip-cache python -m pip install \
       ./services/otel-servicegraph-diff \
-      ./packages/extended-opentelemetry-semconv-models \
-      ./packages/extended-opentelemetry-servicegraph-engine \
-      ./packages/extended-opentelemetry-servicegraph-ingest
+      ./packages/extended-opentelemetry-semconv
 
 FROM ${PYTHON_BASE_IMAGE} AS runtime-layout
 
@@ -48,9 +44,7 @@ FROM ${FLINK_BASE_IMAGE} AS runtime-base
 
 COPY --from=python-build --chown=flink:0 /usr/local /usr/local
 COPY --from=runtime-layout --chown=flink:0 /layout/ /
-COPY --chown=flink:0 packages/extended-opentelemetry-semconv-models/src/extended_otel_semconv /opt/application/extended_otel_semconv
-COPY --chown=flink:0 packages/extended-opentelemetry-servicegraph-engine/src/extended_otel_servicegraph_engine /opt/application/extended_otel_servicegraph_engine
-COPY --chown=flink:0 packages/extended-opentelemetry-servicegraph-ingest/src/extended_otel_servicegraph_ingest /opt/application/extended_otel_servicegraph_ingest
+COPY --chown=flink:0 packages/extended-opentelemetry-semconv/src/extended_otel_semconv /opt/application/extended_otel_semconv
 COPY --chown=flink:0 services/otel-servicegraph-diff/src/otel_servicegraph_diff /opt/application/otel_servicegraph_diff
 COPY --from=java-runtime --chown=flink:0 --chmod=0440 \
   /build/target/interaction-serializer.jar \

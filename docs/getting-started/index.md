@@ -30,7 +30,7 @@ Entity IDs are deterministic and URL-encode each identifying part.
 Install the package from the repository:
 
 ```console
-python -m pip install ./packages/extended-opentelemetry-semconv-models
+python -m pip install ./packages/extended-opentelemetry-semconv
 ```
 
 Python 3.12 is required.

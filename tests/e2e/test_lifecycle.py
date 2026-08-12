@@ -9,7 +9,7 @@ from gremlin_python.driver.protocol import GremlinServerError
 
 from extended_otel_semconv import Service, ServiceCallsServiceEdge
 from extended_otel_semconv.edges import edge_id as semantic_edge_id
-from extended_otel_semconv_gremlin import UnsupportedSemanticTraversalError
+from extended_otel_semconv.gremlin import UnsupportedSemanticTraversalError
 from tests.e2e.environment import E2EEnvironment, wait_for
 
 

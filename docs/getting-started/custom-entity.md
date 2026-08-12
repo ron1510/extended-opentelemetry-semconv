@@ -6,7 +6,7 @@ it with an `implements` relationship.
 ## 1. Define an attribute
 
 Create
-`packages/extended-opentelemetry-semconv-codegen/model/extensions/business/registry.yaml`:
+`tools/semconv_codegen/model/extensions/business/registry.yaml`:
 
 ```yaml
 groups:
@@ -25,7 +25,7 @@ registry.
 ## 2. Define the entity
 
 Create
-`packages/extended-opentelemetry-semconv-codegen/model/extensions/business/entities.yaml`:
+`tools/semconv_codegen/model/extensions/business/entities.yaml`:
 
 ```yaml
 groups:
@@ -47,7 +47,7 @@ created.
 ## 3. Define the relationship
 
 Create
-`packages/extended-opentelemetry-semconv-codegen/model/extensions/business/relationships.yaml`:
+`tools/semconv_codegen/model/extensions/business/relationships.yaml`:
 
 ```yaml
 groups:
@@ -71,7 +71,7 @@ raw-trace graph stream.
 Run both generators from the repository root:
 
 ```console
-python -m extended_otel_semconv_codegen
+python -m tools.semconv_codegen
 ```
 
 This updates:
@@ -85,7 +85,7 @@ Review and commit all generated changes with the registry source.
 ## 5. Validate
 
 ```console
-python -m extended_otel_semconv_codegen --check
+python -m tools.semconv_codegen --check
 python -m pytest -m "not e2e"
 ```
 

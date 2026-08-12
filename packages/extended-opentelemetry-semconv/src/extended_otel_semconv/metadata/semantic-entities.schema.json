@@ -1,0 +1,1414 @@
+{
+  "$defs": {
+    "AppEndpointFields": {
+      "additionalProperties": false,
+      "properties": {
+        "http.request.method": {
+          "description": "HTTP request method.",
+          "enum": [
+            "CONNECT",
+            "DELETE",
+            "GET",
+            "HEAD",
+            "OPTIONS",
+            "PATCH",
+            "POST",
+            "PUT",
+            "TRACE",
+            "QUERY",
+            "_OTHER"
+          ],
+          "minLength": 1,
+          "type": "string"
+        },
+        "http.route": {
+          "description": "The matched route template for the request. This MUST be low-cardinality and include all static path segments, with dynamic path segments represented with placeholders.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "service.name": {
+          "description": "Logical name of the service.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "service.namespace": {
+          "description": "A namespace for `service.name`.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "service.name",
+        "service.namespace",
+        "http.request.method",
+        "http.route"
+      ],
+      "title": "AppEndpointFields",
+      "type": "object",
+      "x-identity-fields": [
+        "service.name",
+        "service.namespace",
+        "http.request.method",
+        "http.route"
+      ],
+      "x-semantic-type": "app.endpoint",
+      "x-template-fields": []
+    },
+    "AppFields": {
+      "additionalProperties": false,
+      "properties": {
+        "app.build_id": {
+          "description": "Unique identifier for a particular build or compilation of the application.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "app.installation.id": {
+          "description": "A unique identifier representing the installation of an application on a specific device",
+          "type": "string"
+        }
+      },
+      "required": [
+        "app.build_id"
+      ],
+      "title": "AppFields",
+      "type": "object",
+      "x-identity-fields": [
+        "app.build_id"
+      ],
+      "x-semantic-type": "app",
+      "x-template-fields": []
+    },
+    "BrowserDocumentFields": {
+      "additionalProperties": false,
+      "properties": {
+        "browser.document.url.full": {
+          "description": "Absolute URL of the current browser document according to [RFC3986](https://www.rfc-editor.org/rfc/rfc3986).",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "browser.document.url.full"
+      ],
+      "title": "BrowserDocumentFields",
+      "type": "object",
+      "x-identity-fields": [
+        "browser.document.url.full"
+      ],
+      "x-semantic-type": "browser.document",
+      "x-template-fields": []
+    },
+    "CicdPipelineFields": {
+      "additionalProperties": false,
+      "properties": {
+        "cicd.pipeline.name": {
+          "description": "The human readable name of the pipeline within a CI/CD system.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "cicd.pipeline.name"
+      ],
+      "title": "CicdPipelineFields",
+      "type": "object",
+      "x-identity-fields": [
+        "cicd.pipeline.name"
+      ],
+      "x-semantic-type": "cicd.pipeline",
+      "x-template-fields": []
+    },
+    "CicdPipelineRunFields": {
+      "additionalProperties": false,
+      "properties": {
+        "cicd.pipeline.run.id": {
+          "description": "The unique identifier of a pipeline run within a CI/CD system.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "cicd.pipeline.run.url.full": {
+          "description": "The [URL](https://wikipedia.org/wiki/URL) of the pipeline run, providing the complete address in order to locate and identify the pipeline run.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cicd.pipeline.run.id"
+      ],
+      "title": "CicdPipelineRunFields",
+      "type": "object",
+      "x-identity-fields": [
+        "cicd.pipeline.run.id"
+      ],
+      "x-semantic-type": "cicd.pipeline.run",
+      "x-template-fields": []
+    },
+    "CicdWorkerFields": {
+      "additionalProperties": false,
+      "properties": {
+        "cicd.worker.id": {
+          "description": "The unique identifier of a worker within a CI/CD system.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "cicd.worker.name": {
+          "description": "The name of a worker within a CI/CD system.",
+          "type": "string"
+        },
+        "cicd.worker.url.full": {
+          "description": "The [URL](https://wikipedia.org/wiki/URL) of the worker, providing the complete address in order to locate and identify the worker.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cicd.worker.id"
+      ],
+      "title": "CicdWorkerFields",
+      "type": "object",
+      "x-identity-fields": [
+        "cicd.worker.id"
+      ],
+      "x-semantic-type": "cicd.worker",
+      "x-template-fields": []
+    },
+    "ContainerRuntimeFields": {
+      "additionalProperties": false,
+      "properties": {
+        "container.runtime.description": {
+          "description": "A description about the runtime which could include, for example details about the CRI/API version being used or other customizations.",
+          "type": "string"
+        },
+        "container.runtime.name": {
+          "description": "The container runtime managing this container.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "container.runtime.version": {
+          "description": "The version of the runtime of this process, as returned by the runtime without modification.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "container.runtime.name",
+        "container.runtime.version"
+      ],
+      "title": "ContainerRuntimeFields",
+      "type": "object",
+      "x-identity-fields": [
+        "container.runtime.name",
+        "container.runtime.version"
+      ],
+      "x-semantic-type": "container.runtime",
+      "x-template-fields": []
+    },
+    "GcpGceInstanceGroupManagerFields": {
+      "additionalProperties": false,
+      "properties": {
+        "gcp.gce.instance_group_manager.name": {
+          "description": "The name of the Instance Group Manager (IGM) that manages this VM, if any.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "gcp.gce.instance_group_manager.region": {
+          "description": "The region of a **regional** Instance Group Manager (e.g., `us-central1`). Set this **only** when the IGM is regional.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "gcp.gce.instance_group_manager.zone": {
+          "description": "The zone of a **zonal** Instance Group Manager (e.g., `us-central1-a`). Set this **only** when the IGM is zonal.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "gcp.gce.instance_group_manager.name",
+        "gcp.gce.instance_group_manager.zone",
+        "gcp.gce.instance_group_manager.region"
+      ],
+      "title": "GcpGceInstanceGroupManagerFields",
+      "type": "object",
+      "x-identity-fields": [
+        "gcp.gce.instance_group_manager.name",
+        "gcp.gce.instance_group_manager.zone",
+        "gcp.gce.instance_group_manager.region"
+      ],
+      "x-semantic-type": "gcp.gce.instance_group_manager",
+      "x-template-fields": []
+    },
+    "K8sClusterFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.cluster.name": {
+          "description": "The name of the cluster.",
+          "type": "string"
+        },
+        "k8s.cluster.uid": {
+          "description": "A pseudo-ID for the cluster, set to the UID of the `kube-system` namespace.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.cluster.uid"
+      ],
+      "title": "K8sClusterFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.cluster.uid"
+      ],
+      "x-semantic-type": "k8s.cluster",
+      "x-template-fields": []
+    },
+    "K8sContainerFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.container.name": {
+          "description": "The name of the Container from Pod specification, must be unique within a Pod. Container runtime usually uses different globally unique name (`container.name`).",
+          "minLength": 1,
+          "type": "string"
+        },
+        "k8s.container.restart_count": {
+          "description": "Number of times the container was restarted. This attribute can be used to identify a particular container (running or stopped) within a container spec.",
+          "type": "integer"
+        },
+        "k8s.container.status.last_terminated_reason": {
+          "description": "Last terminated reason of the Container.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.container.name"
+      ],
+      "title": "K8sContainerFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.container.name"
+      ],
+      "x-semantic-type": "k8s.container",
+      "x-template-fields": []
+    },
+    "K8sCronjobFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.cronjob.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The cronjob annotation placed on the CronJob, the `<key>` being the annotation name, the value being the annotation value.",
+          "type": "object"
+        },
+        "k8s.cronjob.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the CronJob, the `<key>` being the label name, the value being the label value.",
+          "type": "object"
+        },
+        "k8s.cronjob.name": {
+          "description": "The name of the CronJob.",
+          "type": "string"
+        },
+        "k8s.cronjob.uid": {
+          "description": "The UID of the CronJob.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.cronjob.uid"
+      ],
+      "title": "K8sCronjobFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.cronjob.uid"
+      ],
+      "x-semantic-type": "k8s.cronjob",
+      "x-template-fields": [
+        "k8s.cronjob.label",
+        "k8s.cronjob.annotation"
+      ]
+    },
+    "K8sDaemonsetFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.daemonset.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the DaemonSet, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.daemonset.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the DaemonSet, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.daemonset.name": {
+          "description": "The name of the DaemonSet.",
+          "type": "string"
+        },
+        "k8s.daemonset.uid": {
+          "description": "The UID of the DaemonSet.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.daemonset.uid"
+      ],
+      "title": "K8sDaemonsetFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.daemonset.uid"
+      ],
+      "x-semantic-type": "k8s.daemonset",
+      "x-template-fields": [
+        "k8s.daemonset.label",
+        "k8s.daemonset.annotation"
+      ]
+    },
+    "K8sDeploymentFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.deployment.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the Deployment, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.deployment.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the Deployment, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.deployment.name": {
+          "description": "The name of the Deployment.",
+          "type": "string"
+        },
+        "k8s.deployment.uid": {
+          "description": "The UID of the Deployment.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.deployment.uid"
+      ],
+      "title": "K8sDeploymentFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.deployment.uid"
+      ],
+      "x-semantic-type": "k8s.deployment",
+      "x-template-fields": [
+        "k8s.deployment.label",
+        "k8s.deployment.annotation"
+      ]
+    },
+    "K8sHpaFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.hpa.name": {
+          "description": "The name of the horizontal pod autoscaler.",
+          "type": "string"
+        },
+        "k8s.hpa.scaletargetref.api_version": {
+          "description": "The API version of the target resource to scale for the HorizontalPodAutoscaler.",
+          "type": "string"
+        },
+        "k8s.hpa.scaletargetref.kind": {
+          "description": "The kind of the target resource to scale for the HorizontalPodAutoscaler.",
+          "type": "string"
+        },
+        "k8s.hpa.scaletargetref.name": {
+          "description": "The name of the target resource to scale for the HorizontalPodAutoscaler.",
+          "type": "string"
+        },
+        "k8s.hpa.uid": {
+          "description": "The UID of the horizontal pod autoscaler.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.hpa.uid"
+      ],
+      "title": "K8sHpaFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.hpa.uid"
+      ],
+      "x-semantic-type": "k8s.hpa",
+      "x-template-fields": []
+    },
+    "K8sJobFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.job.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the Job, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.job.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the Job, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.job.name": {
+          "description": "The name of the Job.",
+          "type": "string"
+        },
+        "k8s.job.uid": {
+          "description": "The UID of the Job.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.job.uid"
+      ],
+      "title": "K8sJobFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.job.uid"
+      ],
+      "x-semantic-type": "k8s.job",
+      "x-template-fields": [
+        "k8s.job.label",
+        "k8s.job.annotation"
+      ]
+    },
+    "K8sNamespaceFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.namespace.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the Namespace, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.namespace.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the Namespace, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.namespace.name": {
+          "description": "The name of the namespace that the pod is running in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.namespace.name"
+      ],
+      "title": "K8sNamespaceFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.namespace.name"
+      ],
+      "x-semantic-type": "k8s.namespace",
+      "x-template-fields": [
+        "k8s.namespace.label",
+        "k8s.namespace.annotation"
+      ]
+    },
+    "K8sNodeFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.node.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the Node, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.node.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the Node, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.node.name": {
+          "description": "The name of the Node.",
+          "type": "string"
+        },
+        "k8s.node.uid": {
+          "description": "The UID of the Node.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.node.uid"
+      ],
+      "title": "K8sNodeFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.node.uid"
+      ],
+      "x-semantic-type": "k8s.node",
+      "x-template-fields": [
+        "k8s.node.label",
+        "k8s.node.annotation"
+      ]
+    },
+    "K8sNodeSystemContainerFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.node.system_container.name": {
+          "description": "The name of the system container running on the K8s Node.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.node.system_container.name"
+      ],
+      "title": "K8sNodeSystemContainerFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.node.system_container.name"
+      ],
+      "x-semantic-type": "k8s.node.system_container",
+      "x-template-fields": []
+    },
+    "K8sPersistentvolumeFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.persistentvolume.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the PersistentVolume, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.persistentvolume.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the PersistentVolume, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.persistentvolume.name": {
+          "description": "The name of the PersistentVolume.",
+          "type": "string"
+        },
+        "k8s.persistentvolume.reclaim_policy": {
+          "description": "The reclaim policy of the PersistentVolume.",
+          "enum": [
+            "Delete",
+            "Recycle",
+            "Retain"
+          ],
+          "type": "string"
+        },
+        "k8s.persistentvolume.uid": {
+          "description": "The UID of the PersistentVolume.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "k8s.storageclass.name": {
+          "description": "The name of K8s [StorageClass](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.34/#storageclass-v1-storage-k8s-io) object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.persistentvolume.uid"
+      ],
+      "title": "K8sPersistentvolumeFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.persistentvolume.uid"
+      ],
+      "x-semantic-type": "k8s.persistentvolume",
+      "x-template-fields": [
+        "k8s.persistentvolume.label",
+        "k8s.persistentvolume.annotation"
+      ]
+    },
+    "K8sPersistentvolumeclaimFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.persistentvolumeclaim.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the PersistentVolumeClaim, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.persistentvolumeclaim.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the PersistentVolumeClaim, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.persistentvolumeclaim.name": {
+          "description": "The name of the PersistentVolumeClaim.",
+          "type": "string"
+        },
+        "k8s.persistentvolumeclaim.uid": {
+          "description": "The UID of the PersistentVolumeClaim.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "k8s.storageclass.name": {
+          "description": "The name of K8s [StorageClass](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.34/#storageclass-v1-storage-k8s-io) object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.persistentvolumeclaim.uid"
+      ],
+      "title": "K8sPersistentvolumeclaimFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.persistentvolumeclaim.uid"
+      ],
+      "x-semantic-type": "k8s.persistentvolumeclaim",
+      "x-template-fields": [
+        "k8s.persistentvolumeclaim.label",
+        "k8s.persistentvolumeclaim.annotation"
+      ]
+    },
+    "K8sPodFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.pod.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the Pod, the `<key>` being the annotation name, the value being the annotation value.",
+          "type": "object"
+        },
+        "k8s.pod.hostname": {
+          "description": "Specifies the hostname of the Pod.",
+          "type": "string"
+        },
+        "k8s.pod.ip": {
+          "description": "IP address allocated to the Pod.",
+          "type": "string"
+        },
+        "k8s.pod.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the Pod, the `<key>` being the label name, the value being the label value.",
+          "type": "object"
+        },
+        "k8s.pod.name": {
+          "description": "The name of the Pod.",
+          "type": "string"
+        },
+        "k8s.pod.start_time": {
+          "description": "The start timestamp of the Pod.",
+          "type": "string"
+        },
+        "k8s.pod.uid": {
+          "description": "The UID of the Pod.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.pod.uid"
+      ],
+      "title": "K8sPodFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.pod.uid"
+      ],
+      "x-semantic-type": "k8s.pod",
+      "x-template-fields": [
+        "k8s.pod.label",
+        "k8s.pod.annotation"
+      ]
+    },
+    "K8sReplicasetFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.replicaset.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the ReplicaSet, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.replicaset.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the ReplicaSet, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.replicaset.name": {
+          "description": "The name of the ReplicaSet.",
+          "type": "string"
+        },
+        "k8s.replicaset.uid": {
+          "description": "The UID of the ReplicaSet.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.replicaset.uid"
+      ],
+      "title": "K8sReplicasetFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.replicaset.uid"
+      ],
+      "x-semantic-type": "k8s.replicaset",
+      "x-template-fields": [
+        "k8s.replicaset.label",
+        "k8s.replicaset.annotation"
+      ]
+    },
+    "K8sReplicationcontrollerFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.replicationcontroller.name": {
+          "description": "The name of the replication controller.",
+          "type": "string"
+        },
+        "k8s.replicationcontroller.uid": {
+          "description": "The UID of the replication controller.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.replicationcontroller.uid"
+      ],
+      "title": "K8sReplicationcontrollerFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.replicationcontroller.uid"
+      ],
+      "x-semantic-type": "k8s.replicationcontroller",
+      "x-template-fields": []
+    },
+    "K8sResourcequotaFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.resourcequota.name": {
+          "description": "The name of the resource quota.",
+          "type": "string"
+        },
+        "k8s.resourcequota.uid": {
+          "description": "The UID of the resource quota.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.resourcequota.uid"
+      ],
+      "title": "K8sResourcequotaFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.resourcequota.uid"
+      ],
+      "x-semantic-type": "k8s.resourcequota",
+      "x-template-fields": []
+    },
+    "K8sServiceFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.service.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the Service, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.service.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the Service, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.service.name": {
+          "description": "The name of the Service.",
+          "type": "string"
+        },
+        "k8s.service.publish_not_ready_addresses": {
+          "description": "Whether the Service publishes not-ready endpoints.",
+          "type": "boolean"
+        },
+        "k8s.service.selector": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The selector key-value pair placed on the Service, the `<key>` being the selector key, the value being the selector value.",
+          "type": "object"
+        },
+        "k8s.service.traffic_distribution": {
+          "description": "The traffic distribution policy for the Service.",
+          "type": "string"
+        },
+        "k8s.service.type": {
+          "description": "The type of the Kubernetes Service.",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer",
+            "ExternalName"
+          ],
+          "type": "string"
+        },
+        "k8s.service.uid": {
+          "description": "The UID of the Service.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.service.uid"
+      ],
+      "title": "K8sServiceFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.service.uid"
+      ],
+      "x-semantic-type": "k8s.service",
+      "x-template-fields": [
+        "k8s.service.selector",
+        "k8s.service.label",
+        "k8s.service.annotation"
+      ]
+    },
+    "K8sStatefulsetFields": {
+      "additionalProperties": false,
+      "properties": {
+        "k8s.statefulset.annotation": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The annotation placed on the StatefulSet, the `<key>` being the annotation name, the value being the annotation value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.statefulset.label": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The label placed on the StatefulSet, the `<key>` being the label name, the value being the label value, even if the value is empty.",
+          "type": "object"
+        },
+        "k8s.statefulset.name": {
+          "description": "The name of the StatefulSet.",
+          "type": "string"
+        },
+        "k8s.statefulset.uid": {
+          "description": "The UID of the StatefulSet.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "k8s.statefulset.uid"
+      ],
+      "title": "K8sStatefulsetFields",
+      "type": "object",
+      "x-identity-fields": [
+        "k8s.statefulset.uid"
+      ],
+      "x-semantic-type": "k8s.statefulset",
+      "x-template-fields": [
+        "k8s.statefulset.label",
+        "k8s.statefulset.annotation"
+      ]
+    },
+    "OpenshiftClusterquotaFields": {
+      "additionalProperties": false,
+      "properties": {
+        "openshift.clusterquota.name": {
+          "description": "The name of the cluster quota.",
+          "type": "string"
+        },
+        "openshift.clusterquota.uid": {
+          "description": "The UID of the cluster quota.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "openshift.clusterquota.uid"
+      ],
+      "title": "OpenshiftClusterquotaFields",
+      "type": "object",
+      "x-identity-fields": [
+        "openshift.clusterquota.uid"
+      ],
+      "x-semantic-type": "openshift.clusterquota",
+      "x-template-fields": []
+    },
+    "ProcessExecutableFields": {
+      "additionalProperties": false,
+      "properties": {
+        "process.executable.build_id.gnu": {
+          "description": "The GNU build ID as found in the `.note.gnu.build-id` ELF section (hex string).",
+          "type": "string"
+        },
+        "process.executable.build_id.go": {
+          "description": "The Go build ID as retrieved by `go tool buildid <go executable>`.",
+          "type": "string"
+        },
+        "process.executable.build_id.htlhash": {
+          "description": "Deterministic build ID for executables.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "process.executable.name": {
+          "description": "The name of the process executable. On Linux based systems, this SHOULD be set to the base name of the target of `/proc/[pid]/exe`. On Windows, this SHOULD be set to the base name of `GetProcessImageFileNameW`.",
+          "type": "string"
+        },
+        "process.executable.path": {
+          "description": "The full path to the process executable. On Linux based systems, can be set to the target of `proc/[pid]/exe`. On Windows, can be set to the result of `GetProcessImageFileNameW`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "process.executable.build_id.htlhash"
+      ],
+      "title": "ProcessExecutableFields",
+      "type": "object",
+      "x-identity-fields": [
+        "process.executable.build_id.htlhash"
+      ],
+      "x-semantic-type": "process.executable",
+      "x-template-fields": []
+    },
+    "ProcessFields": {
+      "additionalProperties": false,
+      "properties": {
+        "process.args_count": {
+          "description": "Length of the process.command_args array",
+          "type": "integer"
+        },
+        "process.command": {
+          "description": "The command used to launch the process (i.e. the command name). On Linux based systems, can be set to the zeroth string in `proc/[pid]/cmdline`. On Windows, can be set to the first parameter extracted from `GetCommandLineW`.",
+          "type": "string"
+        },
+        "process.command_args": {
+          "description": "All the command arguments (including the command/executable itself) as received by the process. On Linux-based systems (and some other Unixoid systems supporting procfs), can be set according to the list of null-delimited strings extracted from `proc/[pid]/cmdline`. For libc-based executables, this would be the full argv vector passed to `main`. SHOULD NOT be collected by default unless there is sanitization that excludes sensitive data.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "process.command_line": {
+          "description": "The full command used to launch the process as a single string representing the full command. On Windows, can be set to the result of `GetCommandLineW`. Do not set this if you have to assemble it just for monitoring; use `process.command_args` instead. SHOULD NOT be collected by default unless there is sanitization that excludes sensitive data.",
+          "type": "string"
+        },
+        "process.creation.time": {
+          "description": "The date and time the process was created, in ISO 8601 format.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "process.interactive": {
+          "description": "Whether the process is connected to an interactive shell.",
+          "type": "boolean"
+        },
+        "process.linux.cgroup": {
+          "description": "The control group associated with the process.",
+          "type": "string"
+        },
+        "process.owner": {
+          "description": "The username of the user that owns the process.",
+          "type": "string"
+        },
+        "process.parent_pid": {
+          "description": "Parent Process identifier (PPID).",
+          "type": "integer"
+        },
+        "process.pid": {
+          "description": "Process identifier (PID).",
+          "type": "integer"
+        },
+        "process.title": {
+          "description": "Process title (proctitle)",
+          "type": "string"
+        },
+        "process.working_directory": {
+          "description": "The working directory of the process.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "process.pid",
+        "process.creation.time"
+      ],
+      "title": "ProcessFields",
+      "type": "object",
+      "x-identity-fields": [
+        "process.pid",
+        "process.creation.time"
+      ],
+      "x-semantic-type": "process",
+      "x-template-fields": []
+    },
+    "ProcessRuntimeFields": {
+      "additionalProperties": false,
+      "properties": {
+        "process.runtime.description": {
+          "description": "An additional description about the runtime of the process, for example a specific vendor customization of the runtime environment.",
+          "type": "string"
+        },
+        "process.runtime.name": {
+          "description": "The name of the runtime of this process.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "process.runtime.version": {
+          "description": "The version of the runtime of this process, as returned by the runtime without modification.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "process.runtime.name",
+        "process.runtime.version"
+      ],
+      "title": "ProcessRuntimeFields",
+      "type": "object",
+      "x-identity-fields": [
+        "process.runtime.name",
+        "process.runtime.version"
+      ],
+      "x-semantic-type": "process.runtime",
+      "x-template-fields": []
+    },
+    "ServiceFields": {
+      "additionalProperties": false,
+      "properties": {
+        "service.criticality": {
+          "description": "The operational criticality of the service.",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ],
+          "type": "string"
+        },
+        "service.name": {
+          "description": "Logical name of the service.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "service.version": {
+          "description": "The version string of the service component. The format is not defined by these conventions.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "service.name"
+      ],
+      "title": "ServiceFields",
+      "type": "object",
+      "x-identity-fields": [
+        "service.name"
+      ],
+      "x-semantic-type": "service",
+      "x-template-fields": []
+    },
+    "ServiceInstanceFields": {
+      "additionalProperties": false,
+      "properties": {
+        "service.instance.id": {
+          "description": "The string ID of the service instance.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "service.instance.id"
+      ],
+      "title": "ServiceInstanceFields",
+      "type": "object",
+      "x-identity-fields": [
+        "service.instance.id"
+      ],
+      "x-semantic-type": "service.instance",
+      "x-template-fields": []
+    },
+    "ServiceNamespaceFields": {
+      "additionalProperties": false,
+      "properties": {
+        "service.namespace": {
+          "description": "A namespace for `service.name`.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "service.namespace"
+      ],
+      "title": "ServiceNamespaceFields",
+      "type": "object",
+      "x-identity-fields": [
+        "service.namespace"
+      ],
+      "x-semantic-type": "service.namespace",
+      "x-template-fields": []
+    },
+    "TelemetryDistroFields": {
+      "additionalProperties": false,
+      "properties": {
+        "telemetry.distro.name": {
+          "description": "The name of the auto instrumentation agent or distribution, if used.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "telemetry.distro.version": {
+          "description": "The version string of the auto instrumentation agent or distribution, if used.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "telemetry.distro.name"
+      ],
+      "title": "TelemetryDistroFields",
+      "type": "object",
+      "x-identity-fields": [
+        "telemetry.distro.name"
+      ],
+      "x-semantic-type": "telemetry.distro",
+      "x-template-fields": []
+    },
+    "TelemetrySdkFields": {
+      "additionalProperties": false,
+      "properties": {
+        "telemetry.sdk.language": {
+          "description": "The language of the telemetry SDK.",
+          "enum": [
+            "cpp",
+            "dotnet",
+            "erlang",
+            "go",
+            "java",
+            "kotlin",
+            "nodejs",
+            "php",
+            "python",
+            "ruby",
+            "rust",
+            "swift",
+            "webjs"
+          ],
+          "minLength": 1,
+          "type": "string"
+        },
+        "telemetry.sdk.name": {
+          "description": "The name of the telemetry SDK as defined above.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "telemetry.sdk.version": {
+          "description": "The version string of the telemetry SDK.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "telemetry.sdk.name",
+        "telemetry.sdk.language"
+      ],
+      "title": "TelemetrySdkFields",
+      "type": "object",
+      "x-identity-fields": [
+        "telemetry.sdk.name",
+        "telemetry.sdk.language"
+      ],
+      "x-semantic-type": "telemetry.sdk",
+      "x-template-fields": []
+    },
+    "VcsRefFields": {
+      "additionalProperties": false,
+      "properties": {
+        "vcs.ref.head.name": {
+          "description": "The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch** or **tag** in the repository.",
+          "type": "string"
+        },
+        "vcs.ref.head.revision": {
+          "description": "The revision, literally [revised version](https://www.merriam-webster.com/dictionary/revision), The revision most often refers to a commit object in Git, or a revision number in SVN.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "vcs.ref.type": {
+          "description": "The type of the [reference](https://git-scm.com/docs/gitglossary#def_ref) in the repository.",
+          "enum": [
+            "branch",
+            "tag"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "vcs.ref.head.revision"
+      ],
+      "title": "VcsRefFields",
+      "type": "object",
+      "x-identity-fields": [
+        "vcs.ref.head.revision"
+      ],
+      "x-semantic-type": "vcs.ref",
+      "x-template-fields": []
+    },
+    "VcsRepositoryFields": {
+      "additionalProperties": false,
+      "properties": {
+        "vcs.repository.name": {
+          "description": "The human readable name of the repository. It SHOULD NOT include any additional identifier like Group/SubGroup in GitLab or organization in GitHub.",
+          "type": "string"
+        },
+        "vcs.repository.url.full": {
+          "description": "The [canonical URL](https://support.google.com/webmasters/answer/10347851) of the repository providing the complete HTTP(S) address in order to locate and identify the repository through a browser.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "vcs.repository.url.full"
+      ],
+      "title": "VcsRepositoryFields",
+      "type": "object",
+      "x-identity-fields": [
+        "vcs.repository.url.full"
+      ],
+      "x-semantic-type": "vcs.repository",
+      "x-template-fields": []
+    }
+  },
+  "$id": "https://extended-opentelemetry-semconv.dev/schema/semantic-entities.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/AppFields"
+    },
+    {
+      "$ref": "#/$defs/AppEndpointFields"
+    },
+    {
+      "$ref": "#/$defs/BrowserDocumentFields"
+    },
+    {
+      "$ref": "#/$defs/CicdPipelineFields"
+    },
+    {
+      "$ref": "#/$defs/CicdPipelineRunFields"
+    },
+    {
+      "$ref": "#/$defs/CicdWorkerFields"
+    },
+    {
+      "$ref": "#/$defs/ContainerRuntimeFields"
+    },
+    {
+      "$ref": "#/$defs/GcpGceInstanceGroupManagerFields"
+    },
+    {
+      "$ref": "#/$defs/K8sClusterFields"
+    },
+    {
+      "$ref": "#/$defs/K8sContainerFields"
+    },
+    {
+      "$ref": "#/$defs/K8sCronjobFields"
+    },
+    {
+      "$ref": "#/$defs/K8sDaemonsetFields"
+    },
+    {
+      "$ref": "#/$defs/K8sDeploymentFields"
+    },
+    {
+      "$ref": "#/$defs/K8sHpaFields"
+    },
+    {
+      "$ref": "#/$defs/K8sJobFields"
+    },
+    {
+      "$ref": "#/$defs/K8sNamespaceFields"
+    },
+    {
+      "$ref": "#/$defs/K8sNodeFields"
+    },
+    {
+      "$ref": "#/$defs/K8sNodeSystemContainerFields"
+    },
+    {
+      "$ref": "#/$defs/K8sPersistentvolumeFields"
+    },
+    {
+      "$ref": "#/$defs/K8sPersistentvolumeclaimFields"
+    },
+    {
+      "$ref": "#/$defs/K8sPodFields"
+    },
+    {
+      "$ref": "#/$defs/K8sReplicasetFields"
+    },
+    {
+      "$ref": "#/$defs/K8sReplicationcontrollerFields"
+    },
+    {
+      "$ref": "#/$defs/K8sResourcequotaFields"
+    },
+    {
+      "$ref": "#/$defs/K8sServiceFields"
+    },
+    {
+      "$ref": "#/$defs/K8sStatefulsetFields"
+    },
+    {
+      "$ref": "#/$defs/OpenshiftClusterquotaFields"
+    },
+    {
+      "$ref": "#/$defs/ProcessFields"
+    },
+    {
+      "$ref": "#/$defs/ProcessExecutableFields"
+    },
+    {
+      "$ref": "#/$defs/ProcessRuntimeFields"
+    },
+    {
+      "$ref": "#/$defs/ServiceFields"
+    },
+    {
+      "$ref": "#/$defs/ServiceInstanceFields"
+    },
+    {
+      "$ref": "#/$defs/ServiceNamespaceFields"
+    },
+    {
+      "$ref": "#/$defs/TelemetryDistroFields"
+    },
+    {
+      "$ref": "#/$defs/TelemetrySdkFields"
+    },
+    {
+      "$ref": "#/$defs/VcsRefFields"
+    },
+    {
+      "$ref": "#/$defs/VcsRepositoryFields"
+    }
+  ],
+  "title": "GeneratedSemanticEntityFields"
+}
