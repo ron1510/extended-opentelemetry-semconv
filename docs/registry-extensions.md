@@ -79,7 +79,7 @@ business.capability:order-fulfillment
 ```
 
 Changing identifying attributes is an identity migration. Existing and new IDs
-will coexist until old interactions expire or downstream state is rebuilt.
+will coexist until old contributors expire or downstream state is rebuilt.
 
 ## Define relationships
 

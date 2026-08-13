@@ -13,7 +13,7 @@ def test_relationship_edges_are_derived_from_observed_entity_types() -> None:
             name="exposes",
             source_entity="service",
             target_entity="app.endpoint",
-            source_signals=("trace",),
+            source_signals=("service_graph",),
         ),
     )
     entities = entities_from_attributes(
@@ -25,7 +25,7 @@ def test_relationship_edges_are_derived_from_observed_entity_types() -> None:
         }
     )
 
-    edges = relationship_edges(entities, relationships, "trace")
+    edges = relationship_edges(entities, relationships)
 
     assert edges == (
         (
@@ -36,23 +36,7 @@ def test_relationship_edges_are_derived_from_observed_entity_types() -> None:
     )
 
 
-def test_relationship_edges_ignore_unmatched_source_signals() -> None:
-    relationships = (
-        RelationshipDefinition(
-            id="relationship.service_calls_service",
-            type="relationship",
-            name="calls",
-            source_entity="service",
-            target_entity="service",
-            source_signals=("service_graph",),
-        ),
-    )
-    entities = entities_from_attributes({"service.name": "checkout-api"})
-
-    assert relationship_edges(entities, relationships, "trace") == ()
-
-
-def test_relationship_allows_dependency_edges_from_service_graph_only() -> None:
+def test_relationship_allows_dependency_edges() -> None:
     relationships = (
         RelationshipDefinition(
             id="relationship.service_calls_service",
@@ -64,5 +48,4 @@ def test_relationship_allows_dependency_edges_from_service_graph_only() -> None:
         ),
     )
 
-    assert relationship_allows(relationships, "service", "service", "calls", "service_graph")
-    assert not relationship_allows(relationships, "service", "service", "calls", "trace")
+    assert relationship_allows(relationships, "service", "service", "calls")

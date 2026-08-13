@@ -35,4 +35,4 @@ events after `interactionTtlSeconds`; the generator never writes Kafka events
 or changes ArangoDB directly.
 
 For a visible lifecycle demonstration, make the time before a retired edge can
-return longer than the Flink interaction TTL.
+return longer than the Flink contributor TTL.

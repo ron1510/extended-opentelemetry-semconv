@@ -7,7 +7,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from otel_servicegraph_diff.config import (
-    InteractionDiffConfig,
+    GraphEngineConfig,
     KafkaSaslMechanism,
     KafkaSecurityProtocol,
     _escape_jaas_value,
@@ -16,8 +16,8 @@ from otel_servicegraph_diff.config import (
 
 def test_config_rejects_state_ttl_that_can_preempt_business_expiry() -> None:
     with pytest.raises(ValidationError):
-        InteractionDiffConfig(
-            interaction_ttl_seconds=300,
+        GraphEngineConfig(
+            contributor_ttl_seconds=300,
             allowed_lateness_seconds=60,
             state_ttl_seconds=360,
         )
@@ -25,16 +25,16 @@ def test_config_rejects_state_ttl_that_can_preempt_business_expiry() -> None:
 
 def test_config_rejects_invalid_topic_name() -> None:
     with pytest.raises(ValidationError):
-        InteractionDiffConfig(output_topic="contains spaces")
+        GraphEngineConfig(output_topic="contains spaces")
 
 
 def test_config_rejects_non_positive_parallelism() -> None:
     with pytest.raises(ValidationError):
-        InteractionDiffConfig(parallelism=0)
+        GraphEngineConfig(parallelism=0)
 
 
 def test_plaintext_config_has_only_explicit_security_protocol() -> None:
-    config = InteractionDiffConfig()
+    config = GraphEngineConfig()
 
     assert config.kafka_client_properties == {"security.protocol": "PLAINTEXT"}
 
@@ -44,7 +44,7 @@ def test_plaintext_config_has_only_explicit_security_protocol() -> None:
     [KafkaSecurityProtocol.SASL_PLAINTEXT, KafkaSecurityProtocol.SASL_SSL],
 )
 def test_sasl_config_builds_complete_kafka_properties(protocol: KafkaSecurityProtocol) -> None:
-    config = InteractionDiffConfig(
+    config = GraphEngineConfig(
         kafka_security_protocol=protocol,
         kafka_sasl_mechanism=KafkaSaslMechanism.SCRAM_SHA_256,
         kafka_sasl_username='service"graph',
@@ -80,7 +80,7 @@ def test_config_rejects_incomplete_or_inconsistent_kafka_security(
     message: str,
 ) -> None:
     with pytest.raises(ValidationError, match=message):
-        InteractionDiffConfig.model_validate(overrides)
+        GraphEngineConfig.model_validate(overrides)
 
 
 @pytest.mark.parametrize(

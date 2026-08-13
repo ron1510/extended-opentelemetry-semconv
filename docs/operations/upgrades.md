@@ -56,11 +56,16 @@ Set `job.allowNonRestoredState=true` only when a reviewed code change
 intentionally removes an operator and its state. This setting does not make
 incompatible serializers or changed keys safe.
 
-Stable operator UIDs and the keyed state descriptor
-`interaction-state-v2` and `graph-element-aggregate-state-v2` support
-compatible restoration within schema 2.0. Renaming operators,
+The current lifecycle implementation uses operator UID
+`graph-v3-element-lifecycle` and keyed state descriptor
+`graph-element-lifecycle-state-v3`. These identifiers support compatible
+restoration within the direct-contribution implementation. Renaming operators,
 changing key definitions, or changing serialized state models can make a
 savepoint incompatible.
+
+Version 3 deliberately cannot restore version 2 interaction and aggregate
+state. Its first rollout requires fresh Flink state and a rebuilt output
+projection; do not provide an old savepoint to the submitter.
 
 Inspect the lifecycle Jobs after an upgrade:
 

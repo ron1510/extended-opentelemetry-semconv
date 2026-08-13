@@ -1,1 +1,1 @@
-"""Service graph interaction diff service."""
+"""Service-graph element lifecycle service."""

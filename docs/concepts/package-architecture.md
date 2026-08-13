@@ -28,9 +28,9 @@ adapters under `otel_servicegraph_diff.engine` and
 `otel_servicegraph_diff.ingest`. These remain distinct source modules but are
 released and deployed only with the Flink application.
 
-The engine owns neutral observations, interaction state, contributor
-aggregation, staleness, and graph-element lifecycle events. Ingest owns
-OpenTelemetry protobuf parsing and service-graph normalization.
+The engine owns contributor aggregation, staleness, and graph-element lifecycle
+events. Ingest owns OpenTelemetry protobuf parsing and direct expansion of
+service-graph datapoints into semantic node and edge contributions.
 
 ## Repository tooling
 

@@ -1,4 +1,4 @@
-"""Authoritative graph elements and contributor-aware lifecycle aggregation."""
+"""Authoritative graph elements and contributor-aware lifecycle state."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from time import time
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StringConstraints, model_validator
 
 from extended_otel_semconv.edges import MetricValue
 from extended_otel_semconv.edges import edge_id as edge_id
@@ -20,6 +20,8 @@ GRAPH_REQUEST_FAILED_TOTAL = "service_graph.request.failed.total"
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 UnixNano = Annotated[int, Field(gt=0)]
 UnixMilli = Annotated[int, Field(ge=0)]
+MetricDelta = Annotated[StrictInt, Field(ge=0)] | Annotated[StrictFloat, Field(ge=0, allow_inf_nan=False)]
+type ExpiryClock = Literal["event_time", "processing_time"]
 
 
 class FrozenModel(BaseModel):
@@ -73,85 +75,115 @@ type GraphElementEvent = Annotated[
 ]
 
 
-class GraphContributionSnapshot(FrozenModel):
-    observed_at_unix_nano: UnixNano
-    element: GraphElement
-
-
-class GraphContributionUpsert(FrozenModel):
-    operation: Literal["upsert"] = "upsert"
+class GraphContribution(FrozenModel):
     element_id: NonEmptyString
     contributor_id: NonEmptyString
     observed_at_unix_nano: UnixNano
     element: GraphElement
-    metric_deltas: dict[str, MetricValue] = Field(default_factory=dict)
+    metric_deltas: dict[str, MetricDelta] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_element(self) -> GraphContribution:
+        if self.element.id != self.element_id:
+            raise ValueError("element_id must match element.id")
+        if isinstance(self.element, GraphNode) and self.metric_deltas:
+            raise ValueError("node contributions cannot contain metric deltas")
+        return self
 
 
-class GraphContributionRetract(FrozenModel):
-    operation: Literal["retract"] = "retract"
-    element_id: NonEmptyString
-    contributor_id: NonEmptyString
+class ContributorSnapshot(FrozenModel):
     observed_at_unix_nano: UnixNano
+    event_expires_at_unix_nano: UnixNano
+    processing_expires_at_unix_ms: UnixMilli
+    element: GraphElement
 
 
-type GraphContribution = Annotated[
-    GraphContributionUpsert | GraphContributionRetract,
-    Field(discriminator="operation"),
-]
-
-
-class GraphElementAggregateState(FrozenModel):
+class GraphElementState(FrozenModel):
     element_id: NonEmptyString
-    contributors: dict[str, GraphContributionSnapshot]
+    contributors: dict[str, ContributorSnapshot]
     metrics: dict[str, MetricValue] = Field(default_factory=dict)
     last_payload_hash: NonEmptyString
 
 
-class GraphElementAggregationResult(FrozenModel):
-    state: GraphElementAggregateState | None
+class GraphElementLifecycleResult(FrozenModel):
+    state: GraphElementState | None
     event: GraphElementEvent | None = None
 
 
 def apply_contribution(
-    previous: GraphElementAggregateState | None,
+    previous: GraphElementState | None,
     contribution: GraphContribution,
     *,
+    ttl_seconds: int,
+    event_expiry_base_unix_nano: int | None = None,
+    processing_time_unix_ms: int,
     emitted_at_unix_ms: int | None = None,
-) -> GraphElementAggregationResult:
-    emitted_at = emitted_at_unix_ms if emitted_at_unix_ms is not None else int(time() * 1000)
+) -> GraphElementLifecycleResult:
+    if ttl_seconds <= 0:
+        raise ValueError("contributor TTL must be greater than zero")
+    existing = previous.contributors.get(contribution.contributor_id) if previous is not None else None
+    if existing is not None and contribution.observed_at_unix_nano < existing.observed_at_unix_nano:
+        return GraphElementLifecycleResult(state=previous)
+    if previous is not None:
+        _validate_element_identity(previous, contribution.element)
+
+    ttl_nanoseconds = ttl_seconds * 1_000_000_000
+    ttl_milliseconds = ttl_seconds * 1_000
+    event_expiry_base = max(contribution.observed_at_unix_nano, event_expiry_base_unix_nano or 0)
     contributors = dict(previous.contributors) if previous is not None else {}
-    metrics = dict(previous.metrics) if previous is not None else {}
-
-    if isinstance(contribution, GraphContributionRetract):
-        if contribution.contributor_id not in contributors:
-            return GraphElementAggregationResult(state=previous)
-        del contributors[contribution.contributor_id]
-        if not contributors:
-            return GraphElementAggregationResult(
-                state=None,
-                event=_delete_event(contribution.element_id, contribution.observed_at_unix_nano, emitted_at),
-            )
-    else:
-        contributors[contribution.contributor_id] = GraphContributionSnapshot(
-            observed_at_unix_nano=contribution.observed_at_unix_nano,
-            element=contribution.element,
-        )
-        for name, delta in contribution.metric_deltas.items():
-            metrics[name] = metrics.get(name, 0) + delta
-
-    element = _merge_element(contribution.element_id, contributors, metrics)
-    current_hash = payload_hash(element)
-    state = GraphElementAggregateState(
-        element_id=contribution.element_id,
-        contributors=contributors,
-        metrics=metrics,
-        last_payload_hash=current_hash,
+    contributors[contribution.contributor_id] = ContributorSnapshot(
+        observed_at_unix_nano=contribution.observed_at_unix_nano,
+        event_expires_at_unix_nano=event_expiry_base + ttl_nanoseconds,
+        processing_expires_at_unix_ms=processing_time_unix_ms + ttl_milliseconds,
+        element=contribution.element,
     )
-    if previous is not None and previous.last_payload_hash == current_hash:
-        return GraphElementAggregationResult(state=state)
-    return GraphElementAggregationResult(
-        state=state,
-        event=_upsert_event(element, contribution.observed_at_unix_nano, emitted_at, current_hash),
+    metrics = dict(previous.metrics) if previous is not None else {}
+    for name, delta in contribution.metric_deltas.items():
+        metrics[name] = metrics.get(name, 0) + delta
+    return _updated_state(
+        previous,
+        contribution.element_id,
+        contributors,
+        metrics,
+        contribution.observed_at_unix_nano,
+        emitted_at_unix_ms,
+    )
+
+
+def expire_contributors(
+    previous: GraphElementState,
+    *,
+    clock: ExpiryClock,
+    timestamp: int,
+    emitted_at_unix_ms: int | None = None,
+) -> GraphElementLifecycleResult:
+    expired = {
+        contributor_id: snapshot
+        for contributor_id, snapshot in previous.contributors.items()
+        if _snapshot_expired(snapshot, clock, timestamp)
+    }
+    if not expired:
+        return GraphElementLifecycleResult(state=previous)
+
+    contributors = {
+        contributor_id: snapshot
+        for contributor_id, snapshot in previous.contributors.items()
+        if contributor_id not in expired
+    }
+    observed_at = max(snapshot.event_expires_at_unix_nano for snapshot in expired.values())
+    if not contributors:
+        emitted_at = emitted_at_unix_ms if emitted_at_unix_ms is not None else int(time() * 1000)
+        return GraphElementLifecycleResult(
+            state=None,
+            event=_delete_event(previous.element_id, observed_at, emitted_at),
+        )
+    return _updated_state(
+        previous,
+        previous.element_id,
+        contributors,
+        previous.metrics,
+        observed_at,
+        emitted_at_unix_ms,
     )
 
 
@@ -159,9 +191,34 @@ def payload_hash(element: GraphElement) -> str:
     return _digest(element.model_dump(mode="json"))
 
 
+def _updated_state(
+    previous: GraphElementState | None,
+    element_id: str,
+    contributors: dict[str, ContributorSnapshot],
+    metrics: dict[str, MetricValue],
+    observed_at_unix_nano: int,
+    emitted_at_unix_ms: int | None,
+) -> GraphElementLifecycleResult:
+    element = _merge_element(element_id, contributors, metrics)
+    current_hash = payload_hash(element)
+    state = GraphElementState(
+        element_id=element_id,
+        contributors=contributors,
+        metrics=metrics,
+        last_payload_hash=current_hash,
+    )
+    if previous is not None and previous.last_payload_hash == current_hash:
+        return GraphElementLifecycleResult(state=state)
+    emitted_at = emitted_at_unix_ms if emitted_at_unix_ms is not None else int(time() * 1000)
+    return GraphElementLifecycleResult(
+        state=state,
+        event=_upsert_event(element, observed_at_unix_nano, emitted_at, current_hash),
+    )
+
+
 def _merge_element(
     element_id: str,
-    contributors: dict[str, GraphContributionSnapshot],
+    contributors: dict[str, ContributorSnapshot],
     metrics: dict[str, MetricValue],
 ) -> GraphElement:
     ordered = sorted(
@@ -183,6 +240,32 @@ def _merge_element(
         attributes=attributes,
         metrics=dict(sorted(metrics.items())),
     )
+
+
+def _validate_element_identity(state: GraphElementState, element: GraphElement) -> None:
+    existing = next(iter(state.contributors.values())).element
+    match existing, element:
+        case GraphNode(type=existing_type), GraphNode(type=current_type) if existing_type == current_type:
+            return
+        case (
+            GraphEdge(type=existing_type, source_id=existing_source, target_id=existing_target),
+            GraphEdge(type=current_type, source_id=current_source, target_id=current_target),
+        ) if (existing_type, existing_source, existing_target) == (
+            current_type,
+            current_source,
+            current_target,
+        ):
+            return
+        case _:
+            raise ValueError(f"contribution conflicts with graph element identity {state.element_id!r}")
+
+
+def _snapshot_expired(snapshot: ContributorSnapshot, clock: ExpiryClock, timestamp: int) -> bool:
+    match clock:
+        case "event_time":
+            return snapshot.event_expires_at_unix_nano <= timestamp
+        case "processing_time":
+            return snapshot.processing_expires_at_unix_ms <= timestamp
 
 
 def _upsert_event(

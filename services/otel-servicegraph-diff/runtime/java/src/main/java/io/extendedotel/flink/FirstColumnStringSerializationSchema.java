@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.types.Row;
 
-/** Serializes the interaction ID from the first field of a two-column sink row. */
+/** Serializes the graph element ID from the first field of a two-column sink row. */
 public final class FirstColumnStringSerializationSchema implements SerializationSchema<Row> {
     private static final long serialVersionUID = 1L;
 

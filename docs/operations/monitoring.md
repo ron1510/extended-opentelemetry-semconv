@@ -55,7 +55,7 @@ Track:
 - TaskManager availability;
 - JobManager leadership changes;
 - restart count;
-- `rejected_records`;
+- `rejected_inputs`;
 - state volume capacity.
 
 Open the Flink UI:
@@ -105,7 +105,7 @@ Alert on:
 - sustained Kafka consumer lag;
 - repeated Collector export failures;
 - Collector or TaskManager restart loops;
-- `rejected_records` increasing;
+- `rejected_inputs` increasing;
 - Flink state or ArangoDB storage nearing capacity;
 - Gremlin readiness failure;
 - indexer restarts or sustained consumer lag;

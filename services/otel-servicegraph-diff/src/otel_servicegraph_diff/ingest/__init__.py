@@ -1,8 +1,13 @@
 """Collector service-graph metric ingestion."""
 
-from otel_servicegraph_diff.ingest.interaction import (
-    observation_from_metric_point,
-    observation_from_servicegraph_datapoint,
+from otel_servicegraph_diff.ingest.contributions import (
+    contributions_from_servicegraph_datapoint,
+    iter_otlp_json_contributions,
 )
+from otel_servicegraph_diff.ingest.metrics import IngestRejection
 
-__all__ = ["observation_from_metric_point", "observation_from_servicegraph_datapoint"]
+__all__ = [
+    "IngestRejection",
+    "contributions_from_servicegraph_datapoint",
+    "iter_otlp_json_contributions",
+]

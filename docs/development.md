@@ -46,8 +46,8 @@ helm lint deploy/helm/servicegraph-indexer
 helm lint deploy/helm/servicegraph-gremlin
 ```
 
-Tests focus on registry validation, generated artifacts, pure interaction
-transitions, Flink timers, demo topology, generated ArangoDB topology, native
+Tests focus on registry validation, generated artifacts, pure contributor
+lifecycle transitions, Flink timers, demo topology, generated ArangoDB topology, native
 projection, and Gremlin traversal behavior.
 
 ## Documentation

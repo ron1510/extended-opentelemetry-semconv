@@ -18,18 +18,17 @@ from pyflink.datastream import RuntimeExecutionMode
 from pyflink.datastream.connectors.kafka import DeliveryGuarantee, KafkaOffsetResetStrategy
 
 from otel_servicegraph_diff import flink_job
-from otel_servicegraph_diff.config import InteractionDiffConfig
-from otel_servicegraph_diff.engine.elements import GraphContributionUpsert, GraphNode, apply_contribution
-from otel_servicegraph_diff.engine.metrics import SERVICE_GRAPH_REQUEST_TOTAL
-from otel_servicegraph_diff.ingest.interaction import observation_from_servicegraph_datapoint
-from otel_servicegraph_diff.runner import ParsedObservation
+from otel_servicegraph_diff.config import GraphEngineConfig
+from otel_servicegraph_diff.engine.elements import GraphContribution, GraphNode, apply_contribution
+from otel_servicegraph_diff.ingest.contributions import contributions_from_servicegraph_datapoint
+from otel_servicegraph_diff.ingest.metrics import SERVICE_GRAPH_REQUEST_TOTAL
 
 
 def test_main_loads_settings_and_runs_job(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = InteractionDiffConfig()
+    config = GraphEngineConfig()
     load_config = MagicMock(return_value=config)
     run = MagicMock()
-    monkeypatch.setattr(flink_job, "interaction_diff_config_from_env", load_config)
+    monkeypatch.setattr(flink_job, "graph_engine_config_from_env", load_config)
     monkeypatch.setattr(flink_job, "run_flink_job", run)
 
     assert flink_job.main() == 0
@@ -38,7 +37,7 @@ def test_main_loads_settings_and_runs_job(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_run_flink_job_configures_runtime_and_executes_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = InteractionDiffConfig(
+    config = GraphEngineConfig(
         parallelism=2,
         checkpoint_interval_ms=5_000,
         restart_attempts=4,
@@ -94,7 +93,7 @@ def test_configure_job_graph_builds_named_stable_operator_chain(monkeypatch: pyt
     monkeypatch.setattr(flink_job, "Duration", duration)
     monkeypatch.setattr(flink_job, "Types", SimpleNamespace(STRING=MagicMock(return_value="string")))
 
-    config = InteractionDiffConfig(allowed_lateness_seconds=3, interaction_ttl_seconds=10, state_ttl_seconds=30)
+    config = GraphEngineConfig(allowed_lateness_seconds=3, contributor_ttl_seconds=10, state_ttl_seconds=30)
     flink_job._configure_job_graph(
         cast(Any, env),
         config,
@@ -110,15 +109,11 @@ def test_configure_job_graph_builds_named_stable_operator_chain(monkeypatch: pyt
     parser_uid = parser_named.uid.return_value
     watermark_operator = parser_uid.assign_timestamps_and_watermarks.return_value
     watermark_named = watermark_operator.name.return_value
-    observations = watermark_named.uid.return_value
-    keyed = observations.key_by.return_value
+    contributions = watermark_named.uid.return_value
+    keyed = contributions.key_by.return_value
     process_operator = keyed.process.return_value
     process_named = process_operator.name.return_value
-    contributions = process_named.uid.return_value
-    element_keyed = contributions.key_by.return_value
-    aggregate_operator = element_keyed.process.return_value
-    aggregate_named = aggregate_operator.name.return_value
-    events = aggregate_named.uid.return_value
+    events = process_named.uid.return_value
     map_operator = events.map.return_value
     map_named = map_operator.name.return_value
     event_rows = map_named.uid.return_value
@@ -127,30 +122,26 @@ def test_configure_job_graph_builds_named_stable_operator_chain(monkeypatch: pyt
 
     env.from_source.assert_called_once_with(source, "no-watermarks", "servicegraph-otlp-json")
     source_operator.name.assert_called_once_with("servicegraph-kafka-source")
-    source_named.uid.assert_called_once_with("graph-v2-kafka-source")
+    source_named.uid.assert_called_once_with("graph-v3-kafka-source")
     payloads.flat_map.assert_called_once_with(ANY)
-    parser_operator.name.assert_called_once_with("parse-otlp-servicegraph")
-    parser_named.uid.assert_called_once_with("graph-v2-parse-otlp-servicegraph")
+    parser_operator.name.assert_called_once_with("extract-graph-contributions")
+    parser_named.uid.assert_called_once_with("graph-v3-extract-contributions")
     strategy.for_bounded_out_of_orderness.assert_called_once_with("3s")
     watermark.with_idleness.assert_called_once_with("6s")
     watermark.with_timestamp_assigner.assert_called_once_with(ANY)
     parser_uid.assign_timestamps_and_watermarks.assert_called_once_with(watermark)
-    watermark_operator.name.assert_called_once_with("graph-element-watermarks")
-    watermark_named.uid.assert_called_once_with("graph-v2-watermarks")
-    observations.key_by.assert_called_once_with(flink_job._interaction_key, key_type="string")
-    keyed.process.assert_called_once_with(ANY)
-    process_operator.name.assert_called_once_with("interaction-contributions")
-    process_named.uid.assert_called_once_with("graph-v2-interaction-contributions")
+    watermark_operator.name.assert_called_once_with("graph-contribution-watermarks")
+    watermark_named.uid.assert_called_once_with("graph-v3-watermarks")
     contributions.key_by.assert_called_once_with(flink_job._element_key, key_type="string")
-    element_keyed.process.assert_called_once_with(ANY)
-    aggregate_operator.name.assert_called_once_with("graph-element-aggregation")
-    aggregate_named.uid.assert_called_once_with("graph-v2-element-aggregation")
+    keyed.process.assert_called_once_with(ANY)
+    process_operator.name.assert_called_once_with("graph-element-lifecycle")
+    process_named.uid.assert_called_once_with("graph-v3-element-lifecycle")
     events.map.assert_called_once_with(flink_job._event_row, output_type=flink_job.OUTPUT_ROW_TYPE)
     map_operator.name.assert_called_once_with("serialize-graph-element-events")
-    map_named.uid.assert_called_once_with("graph-v2-serialize-events")
+    map_named.uid.assert_called_once_with("graph-v3-serialize-events")
     event_rows.sink_to.assert_called_once_with(sink)
     sink_operator.name.assert_called_once_with("graph-element-events")
-    sink_named.uid.assert_called_once_with("graph-v2-events-sink")
+    sink_named.uid.assert_called_once_with("graph-v3-events-sink")
 
 
 def test_kafka_source_maps_all_contract_properties(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -172,7 +163,7 @@ def test_kafka_source_maps_all_contract_properties(monkeypatch: pytest.MonkeyPat
     )
     deserializer = object()
     monkeypatch.setattr(flink_job, "SimpleStringSchema", MagicMock(return_value=deserializer))
-    config = InteractionDiffConfig(kafka_bootstrap_servers="one:9092,two:9092")
+    config = GraphEngineConfig(kafka_bootstrap_servers="one:9092,two:9092")
 
     assert flink_job._kafka_source(config) is source
     builder.set_bootstrap_servers.assert_called_once_with("one:9092,two:9092")
@@ -227,7 +218,7 @@ def test_kafka_sink_maps_serializers_delivery_and_properties(monkeypatch: pytest
     sink = object()
     sink_builder.build.return_value = sink
     monkeypatch.setattr(flink_job, "KafkaSink", SimpleNamespace(builder=MagicMock(return_value=sink_builder)))
-    config = InteractionDiffConfig(kafka_bootstrap_servers="broker:9092")
+    config = GraphEngineConfig(kafka_bootstrap_servers="broker:9092")
 
     assert flink_job._kafka_sink(config, "events") is sink
     serialization_schema.assert_has_calls([call(key_java), call(value_java)])
@@ -243,7 +234,7 @@ def test_kafka_sink_maps_serializers_delivery_and_properties(monkeypatch: pytest
     sink_builder.build.assert_called_once_with()
 
 
-def test_payload_parser_initializes_metric_and_yields_valid_observation() -> None:
+def test_payload_parser_initializes_metric_and_yields_direct_contributions() -> None:
     counter = MagicMock()
     metrics = MagicMock()
     metrics.counter.return_value = counter
@@ -252,13 +243,14 @@ def test_payload_parser_initializes_metric_and_yields_valid_observation() -> Non
     parser = flink_job._PayloadParser()
 
     with pytest.raises(RuntimeError, match="before operator initialization"):
-        parser._require_rejected_records()
+        parser._require_rejected_inputs()
 
     parser.open(runtime)
-    observations = tuple(parser.flat_map(_valid_metrics_payload()))
+    contributions = tuple(parser.flat_map(_valid_metrics_payload()))
 
-    metrics.counter.assert_called_once_with("rejected_records")
-    assert len(observations) == 1
+    metrics.counter.assert_called_once_with("rejected_inputs")
+    assert len(contributions) == 3
+    assert len({item.element_id for item in contributions}) == 3
     counter.inc.assert_not_called()
 
 
@@ -276,9 +268,9 @@ def test_payload_parser_yields_multiple_points_and_ignores_unknown_metrics() -> 
     parser = flink_job._PayloadParser()
     parser.open(runtime)
 
-    observations = tuple(parser.flat_map(json.dumps(payload)))
+    contributions = tuple(parser.flat_map(json.dumps(payload)))
 
-    assert [item.observation.metric.value for item in observations] == [1, 2]
+    assert [next(iter(item.metric_deltas.values())) for item in contributions if item.metric_deltas] == [1, 2]
     counter.inc.assert_not_called()
 
 
@@ -296,7 +288,7 @@ def test_process_open_registers_versioned_ttl_state(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         flink_job,
         "Types",
-        SimpleNamespace(STRING=MagicMock(return_value="string"), LONG=MagicMock(return_value="long")),
+        SimpleNamespace(STRING=MagicMock(return_value="string")),
     )
     descriptors: list[_FakeDescriptor] = []
 
@@ -306,37 +298,40 @@ def test_process_open_registers_versioned_ttl_state(monkeypatch: pytest.MonkeyPa
         return result
 
     monkeypatch.setattr(flink_job, "ValueStateDescriptor", descriptor)
-    states = [object(), object()]
+    states = [object()]
     runtime = MagicMock()
     runtime.get_state.side_effect = states
-    operator = flink_job._InteractionContributionProcess(ttl_seconds=5, state_ttl_seconds=60)
+    operator = flink_job._GraphElementLifecycleProcess(ttl_seconds=5, state_ttl_seconds=60)
 
     operator.open(runtime)
 
     new_builder.assert_called_once_with("60s")
     assert [(item.name, item.value_type, item.ttl) for item in descriptors] == [
-        ("interaction-state-v2", "string", ttl),
-        ("interaction-processing-expiry-v2", "long", ttl),
+        ("graph-element-lifecycle-state-v3", "string", ttl),
     ]
     assert operator._state is states[0]  # pyright: ignore[reportPrivateUsage]
-    assert operator._processing_timer is states[1]  # pyright: ignore[reportPrivateUsage]
 
 
 def test_small_stream_adapters_preserve_identity_and_time() -> None:
-    parsed = _parsed_observation()
+    parsed = _parsed_contribution()
     assigner = flink_job._ObservationTimestampAssigner()
     assert assigner.extract_timestamp(parsed, record_timestamp=999) == 1_234
-    assert flink_job._interaction_key(parsed) == parsed.observation.interaction_id
     assert flink_job._timer_millis(1_000_000_000) == 1_000
     assert flink_job._timer_millis(1_000_000_001) == 1_001
 
-    contribution = GraphContributionUpsert(
+    contribution = GraphContribution(
         element_id="service:frontend",
-        contributor_id="interaction-a",
+        contributor_id="contributor-a",
         observed_at_unix_nano=1_234_567_890,
         element=GraphNode(id="service:frontend", type="service"),
     )
-    result = apply_contribution(None, contribution, emitted_at_unix_ms=10)
+    result = apply_contribution(
+        None,
+        contribution,
+        ttl_seconds=5,
+        processing_time_unix_ms=10,
+        emitted_at_unix_ms=10,
+    )
     assert result.event is not None
     assert flink_job._element_key(contribution) == contribution.element_id
     row = flink_job._event_row(result.event)
@@ -380,16 +375,14 @@ def _schema(value: object) -> tuple[str, object]:
     return "schema", value
 
 
-def _parsed_observation() -> ParsedObservation:
-    observation = observation_from_servicegraph_datapoint(
+def _parsed_contribution() -> GraphContribution:
+    contributions = contributions_from_servicegraph_datapoint(
         SERVICE_GRAPH_REQUEST_TOTAL,
         {"client": "frontend", "server": "checkout-api"},
         1,
         1_234_567_890,
-        start_time_unix_nano=1,
     )
-    assert observation is not None
-    return ParsedObservation(observation=observation)
+    return next(item for item in contributions if item.element_id == "service:frontend")
 
 
 def _valid_metrics_payload() -> str:
@@ -399,7 +392,7 @@ def _valid_metrics_payload() -> str:
           "metrics": [{
             "name": "traces_service_graph_request_total",
             "sum": {
-              "aggregationTemporality": 2,
+              "aggregationTemporality": 1,
               "dataPoints": [{
                 "asInt": "1",
                 "startTimeUnixNano": "1",

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Validate Servicegraph Change"
+  short_description: "Prove servicegraph changes at the right depth"
+  default_prompt: "Use $validate-servicegraph-change to validate this change and report exactly what was proven."

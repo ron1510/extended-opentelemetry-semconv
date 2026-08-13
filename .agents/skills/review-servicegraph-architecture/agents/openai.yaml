@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Servicegraph Architecture"
+  short_description: "Review servicegraph boundaries and invariants"
+  default_prompt: "Use $review-servicegraph-architecture to review this servicegraph change for correctness and unnecessary complexity."

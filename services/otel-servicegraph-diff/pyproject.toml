@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "otel-servicegraph-diff"
 version = "0.1.0"
-description = "PyFlink servicegraph interaction diff application."
+description = "PyFlink servicegraph graph-element lifecycle application."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

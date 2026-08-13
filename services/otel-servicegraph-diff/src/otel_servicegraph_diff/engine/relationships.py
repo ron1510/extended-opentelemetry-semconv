@@ -7,7 +7,6 @@ from typing import NamedTuple
 
 from extended_otel_semconv.entities import SemanticEntity
 from extended_otel_semconv.relationships import RelationshipDefinition
-from otel_servicegraph_diff.engine.model import SourceSignal
 
 
 class RelationshipEdge(NamedTuple):
@@ -19,13 +18,10 @@ class RelationshipEdge(NamedTuple):
 def relationship_edges(
     entities: Sequence[SemanticEntity],
     relationships: Sequence[RelationshipDefinition],
-    source_signal: SourceSignal,
 ) -> tuple[RelationshipEdge, ...]:
     entities_by_type = group_entities_by_type(entities)
     edges: list[RelationshipEdge] = []
     for relationship in relationships:
-        if not relationship_matches_source_signal(relationship, source_signal):
-            continue
         if relationship.source_entity == relationship.target_entity:
             continue
         edges.extend(edges_for_relationship(entities_by_type, relationship))
@@ -37,13 +33,11 @@ def relationship_allows(
     source_entity: str,
     target_entity: str,
     relationship_name: str,
-    source_signal: SourceSignal,
 ) -> bool:
     return any(
         relationship.source_entity == source_entity
         and relationship.target_entity == target_entity
         and relationship.name == relationship_name
-        and relationship_matches_source_signal(relationship, source_signal)
         for relationship in relationships
     )
 
@@ -65,10 +59,3 @@ def edges_for_relationship(
         for target in entities_by_type.get(relationship.target_entity, ())
         if source.entity_id != target.entity_id
     )
-
-
-def relationship_matches_source_signal(
-    relationship: RelationshipDefinition,
-    source_signal: SourceSignal,
-) -> bool:
-    return source_signal in relationship.source_signals

@@ -1,4 +1,6 @@
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 .idea/
 __pycache__/
 *.py[cod]

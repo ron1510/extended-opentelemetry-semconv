@@ -21,7 +21,7 @@ class KafkaSaslMechanism(StrEnum):
     SCRAM_SHA_256 = "SCRAM-SHA-256"
 
 
-class InteractionDiffConfig(BaseSettings):
+class GraphEngineConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     kafka_bootstrap_servers: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] = Field(
@@ -56,7 +56,7 @@ class InteractionDiffConfig(BaseSettings):
         default="graph-element-engine",
         validation_alias="INTERACTION_DIFF_GROUP_ID",
     )
-    interaction_ttl_seconds: int = Field(default=300, gt=0, validation_alias="INTERACTION_DIFF_TTL_SECONDS")
+    contributor_ttl_seconds: int = Field(default=300, gt=0, validation_alias="INTERACTION_DIFF_TTL_SECONDS")
     allowed_lateness_seconds: int = Field(
         default=60,
         ge=0,
@@ -69,10 +69,10 @@ class InteractionDiffConfig(BaseSettings):
     restart_delay_seconds: int = Field(default=10, ge=0, validation_alias="FLINK_RESTART_DELAY_SECONDS")
 
     @model_validator(mode="after")
-    def validate_ttl_relationship(self) -> InteractionDiffConfig:
-        minimum_state_ttl = self.interaction_ttl_seconds + self.allowed_lateness_seconds
+    def validate_ttl_relationship(self) -> GraphEngineConfig:
+        minimum_state_ttl = self.contributor_ttl_seconds + self.allowed_lateness_seconds
         if self.state_ttl_seconds <= minimum_state_ttl:
-            raise ValueError("state TTL must exceed interaction TTL plus allowed lateness")
+            raise ValueError("state TTL must exceed contributor TTL plus allowed lateness")
         if self.kafka_security_protocol is not KafkaSecurityProtocol.PLAINTEXT:
             if self.kafka_sasl_mechanism is None:
                 raise ValueError("SASL mechanism is required when Kafka uses authentication")
@@ -121,5 +121,5 @@ def _escape_jaas_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def interaction_diff_config_from_env() -> InteractionDiffConfig:
-    return InteractionDiffConfig()
+def graph_engine_config_from_env() -> GraphEngineConfig:
+    return GraphEngineConfig()

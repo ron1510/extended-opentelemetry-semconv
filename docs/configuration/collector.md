@@ -81,7 +81,7 @@ streamContract:
 ```
 
 `storeTtl` is the span-pairing retention inside the connector. It is separate
-from Flink's interaction TTL.
+from Flink's contributor TTL.
 
 ## Kafka security
 

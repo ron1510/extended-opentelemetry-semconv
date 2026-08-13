@@ -30,26 +30,16 @@ from pyflink.datastream.functions import FlatMapFunction, KeyedProcessFunction, 
 from pyflink.datastream.state import StateTtlConfig, ValueState, ValueStateDescriptor
 from pyflink.java_gateway import get_gateway
 
-from otel_servicegraph_diff.config import InteractionDiffConfig, interaction_diff_config_from_env
+from otel_servicegraph_diff.config import GraphEngineConfig, graph_engine_config_from_env
 from otel_servicegraph_diff.engine.elements import (
     GraphContribution,
-    GraphElementAggregateState,
     GraphElementEvent,
+    GraphElementState,
     apply_contribution,
+    expire_contributors,
 )
-from otel_servicegraph_diff.engine.interaction import (
-    InteractionState,
-    apply_observation,
-    contributions_for_transition,
-    retract_contributions,
-    state_has_expired,
-)
-from otel_servicegraph_diff.runner import (
-    ParsedObservation,
-    RejectedRecord,
-    event_record,
-    iter_parsed_payloads,
-)
+from otel_servicegraph_diff.ingest.contributions import iter_otlp_json_contributions
+from otel_servicegraph_diff.ingest.metrics import IngestRejection
 
 OUTPUT_ROW_TYPE = Types.ROW_NAMED(["key", "value"], [Types.STRING(), Types.STRING()])
 LOGGER = logging.getLogger(__name__)
@@ -60,8 +50,6 @@ class TimerService(Protocol):
     def current_watermark(self) -> int: ...
     def register_processing_time_timer(self, timestamp: int) -> None: ...
     def register_event_time_timer(self, timestamp: int) -> None: ...
-    def delete_processing_time_timer(self, timestamp: int) -> None: ...
-    def delete_event_time_timer(self, timestamp: int) -> None: ...
 
 
 class ProcessContext(Protocol):
@@ -77,11 +65,11 @@ class Counter(Protocol):
 
 
 def main() -> int:
-    run_flink_job(interaction_diff_config_from_env())
+    run_flink_job(graph_engine_config_from_env())
     return 0
 
 
-def run_flink_job(config: InteractionDiffConfig) -> None:
+def run_flink_job(config: GraphEngineConfig) -> None:
     flink_config = Configuration()
     flink_config.set_string("restart-strategy.type", "fixed-delay")
     flink_config.set_integer("restart-strategy.fixed-delay.attempts", config.restart_attempts)
@@ -103,19 +91,19 @@ def run_flink_job(config: InteractionDiffConfig) -> None:
 
 def _configure_job_graph(
     env: StreamExecutionEnvironment,
-    config: InteractionDiffConfig,
+    config: GraphEngineConfig,
     source: KafkaSource,
     event_sink: KafkaSink,
 ) -> None:
     payloads = (
         env.from_source(source, WatermarkStrategy.no_watermarks(), "servicegraph-otlp-json")
         .name("servicegraph-kafka-source")
-        .uid("graph-v2-kafka-source")
+        .uid("graph-v3-kafka-source")
     )
-    observations = (
+    contributions = (
         payloads.flat_map(_PayloadParser())
-        .name("parse-otlp-servicegraph")
-        .uid("graph-v2-parse-otlp-servicegraph")
+        .name("extract-graph-contributions")
+        .uid("graph-v3-extract-contributions")
         .assign_timestamps_and_watermarks(
             WatermarkStrategy.for_bounded_out_of_orderness(
                 Duration.of_seconds(config.allowed_lateness_seconds)
@@ -123,30 +111,29 @@ def _configure_job_graph(
             .with_idleness(Duration.of_seconds(max(config.allowed_lateness_seconds * 2, 1)))
             .with_timestamp_assigner(_ObservationTimestampAssigner())
         )
-        .name("graph-element-watermarks")
-        .uid("graph-v2-watermarks")
-    )
-    contributions = (
-        observations.key_by(_interaction_key, key_type=Types.STRING())
-        .process(_InteractionContributionProcess(config.interaction_ttl_seconds, config.state_ttl_seconds))
-        .name("interaction-contributions")
-        .uid("graph-v2-interaction-contributions")
+        .name("graph-contribution-watermarks")
+        .uid("graph-v3-watermarks")
     )
     events = (
         contributions.key_by(_element_key, key_type=Types.STRING())
-        .process(_GraphElementAggregateProcess(config.state_ttl_seconds))
-        .name("graph-element-aggregation")
-        .uid("graph-v2-element-aggregation")
+        .process(
+            _GraphElementLifecycleProcess(
+                config.contributor_ttl_seconds,
+                config.state_ttl_seconds,
+            )
+        )
+        .name("graph-element-lifecycle")
+        .uid("graph-v3-element-lifecycle")
     )
     event_rows = (
         events.map(_event_row, output_type=OUTPUT_ROW_TYPE)
         .name("serialize-graph-element-events")
-        .uid("graph-v2-serialize-events")
+        .uid("graph-v3-serialize-events")
     )
-    event_rows.sink_to(event_sink).name("graph-element-events").uid("graph-v2-events-sink")
+    event_rows.sink_to(event_sink).name("graph-element-events").uid("graph-v3-events-sink")
 
 
-def _kafka_source(config: InteractionDiffConfig) -> KafkaSource:
+def _kafka_source(config: GraphEngineConfig) -> KafkaSource:
     builder = (
         KafkaSource.builder()
         .set_bootstrap_servers(config.bootstrap_servers)
@@ -163,7 +150,7 @@ def _kafka_source(config: InteractionDiffConfig) -> KafkaSource:
     return builder.set_value_only_deserializer(SimpleStringSchema()).build()
 
 
-def _kafka_sink(config: InteractionDiffConfig, topic: str) -> KafkaSink:
+def _kafka_sink(config: GraphEngineConfig, topic: str) -> KafkaSink:
     jvm = get_gateway().jvm
     # Py4J resolves checked-in Java classes dynamically and exposes no callable
     # type metadata. Keep that unsound boundary to these two constructor calls.
@@ -194,131 +181,38 @@ def _kafka_sink(config: InteractionDiffConfig, topic: str) -> KafkaSink:
 
 class _PayloadParser(FlatMapFunction):
     def __init__(self) -> None:
-        self._rejected_records: Counter | None = None
+        self._rejected_inputs: Counter | None = None
 
     def open(self, runtime_context: RuntimeContext) -> None:
-        self._rejected_records = cast(Counter, runtime_context.get_metrics_group().counter("rejected_records"))
+        self._rejected_inputs = cast(Counter, runtime_context.get_metrics_group().counter("rejected_inputs"))
 
-    def flat_map(self, value: str) -> Iterable[ParsedObservation]:
-        for parsed in iter_parsed_payloads(value):
-            if isinstance(parsed, RejectedRecord):
-                self._require_rejected_records().inc()
-                LOGGER.warning(
-                    "discarding rejected servicegraph record: reason=%s",
-                    parsed.rejection.reason,
-                )
-                continue
-            yield parsed
+    def flat_map(self, value: str) -> Iterable[GraphContribution]:
+        for parsed in iter_otlp_json_contributions(value):
+            match parsed:
+                case IngestRejection():
+                    self._require_rejected_inputs().inc()
+                    LOGGER.warning(
+                        "discarding rejected servicegraph input: reason=%s detail=%s",
+                        parsed.reason,
+                        (parsed.detail or "")[:512],
+                    )
+                case GraphContribution():
+                    yield parsed
 
-    def _require_rejected_records(self) -> Counter:
-        if self._rejected_records is None:
+    def _require_rejected_inputs(self) -> Counter:
+        if self._rejected_inputs is None:
             raise RuntimeError("parser metrics accessed before operator initialization")
-        return self._rejected_records
+        return self._rejected_inputs
 
 
-class _InteractionContributionProcess(KeyedProcessFunction):
+class _GraphElementLifecycleProcess(KeyedProcessFunction):
     def __init__(self, ttl_seconds: int, state_ttl_seconds: int) -> None:
         self._ttl_seconds = ttl_seconds
         self._state_ttl_seconds = state_ttl_seconds
         self._state: ValueState[str] | None = None
-        self._processing_timer: ValueState[int] | None = None
 
     def open(self, runtime_context: RuntimeContext) -> None:
-        descriptor = ValueStateDescriptor("interaction-state-v2", Types.STRING())
-        ttl_config = (
-            StateTtlConfig.new_builder(Time.seconds(self._state_ttl_seconds))
-            .update_ttl_on_create_and_write()
-            .never_return_expired()
-            .cleanup_full_snapshot()
-            .build()
-        )
-        descriptor.enable_time_to_live(ttl_config)
-        self._state = runtime_context.get_state(descriptor)
-        processing_timer_descriptor = ValueStateDescriptor("interaction-processing-expiry-v2", Types.LONG())
-        processing_timer_descriptor.enable_time_to_live(ttl_config)
-        self._processing_timer = runtime_context.get_state(processing_timer_descriptor)
-
-    def process_element(
-        self,
-        value: ParsedObservation,
-        ctx: KeyedProcessFunction.Context,
-    ) -> Iterable[GraphContribution]:
-        state_handle = self._require_state()
-        previous_json = state_handle.value()
-        previous = InteractionState.model_validate_json(previous_json) if previous_json else None
-        timer_service = cast(ProcessContext, ctx).timer_service()
-        watermark_nano = max(timer_service.current_watermark(), 0) * 1_000_000
-        result = apply_observation(
-            previous,
-            value.observation,
-            ttl_seconds=self._ttl_seconds,
-            expiry_base_unix_nano=watermark_nano,
-        )
-        if not result.changed:
-            if previous is not None and not previous.active:
-                state_handle.update(previous.model_dump_json())
-            return ()
-        contributions = contributions_for_transition(previous, result.state, value.observation)
-        processing_timer_state = self._require_processing_timer()
-        if previous is not None:
-            timer_service.delete_event_time_timer(_timer_millis(previous.expires_at_unix_nano))
-            previous_processing_timer = cast(int | None, processing_timer_state.value())
-            if previous_processing_timer is not None:
-                timer_service.delete_processing_time_timer(previous_processing_timer)
-        state_handle.update(result.state.model_dump_json())
-        timer_service.register_event_time_timer(_timer_millis(result.state.expires_at_unix_nano))
-        processing_expiry = timer_service.current_processing_time() + self._ttl_seconds * 1_000
-        processing_timer_state.update(processing_expiry)
-        timer_service.register_processing_time_timer(processing_expiry)
-        return contributions
-
-    def on_timer(
-        self,
-        timestamp: int,
-        ctx: KeyedProcessFunction.OnTimerContext,
-    ) -> Iterable[GraphContribution]:
-        state_handle = self._require_state()
-        state_json = state_handle.value()
-        if not state_json:
-            return ()
-        state = InteractionState.model_validate_json(state_json)
-        timer_service = cast(ProcessContext, ctx).timer_service()
-        processing_timer_state = self._require_processing_timer()
-        time_domain = cast(OnTimerProcessContext, ctx).time_domain()
-        if time_domain is TimeDomain.PROCESSING_TIME:
-            if processing_timer_state.value() != timestamp:
-                return ()
-            expired = state_has_expired(state, state.expires_at_unix_nano)
-            timer_service.delete_event_time_timer(_timer_millis(state.expires_at_unix_nano))
-        else:
-            expired = state_has_expired(state, timestamp * 1_000_000)
-        if not expired:
-            return ()
-        processing_timer = cast(int | None, processing_timer_state.value())
-        if processing_timer is not None and time_domain is TimeDomain.EVENT_TIME:
-            timer_service.delete_processing_time_timer(processing_timer)
-        processing_timer_state.clear()
-        state_handle.update(state.model_copy(update={"active": False}).model_dump_json())
-        return retract_contributions(state)
-
-    def _require_state(self) -> ValueState[str]:
-        if self._state is None:
-            raise RuntimeError("Flink state accessed before operator initialization")
-        return self._state
-
-    def _require_processing_timer(self) -> ValueState[int]:
-        if self._processing_timer is None:
-            raise RuntimeError("Flink processing timer state accessed before operator initialization")
-        return self._processing_timer
-
-
-class _GraphElementAggregateProcess(KeyedProcessFunction):
-    def __init__(self, state_ttl_seconds: int) -> None:
-        self._state_ttl_seconds = state_ttl_seconds
-        self._state: ValueState[str] | None = None
-
-    def open(self, runtime_context: RuntimeContext) -> None:
-        descriptor = ValueStateDescriptor("graph-element-aggregate-state-v2", Types.STRING())
+        descriptor = ValueStateDescriptor("graph-element-lifecycle-state-v3", Types.STRING())
         ttl_config = (
             StateTtlConfig.new_builder(Time.seconds(self._state_ttl_seconds))
             .update_ttl_on_create_and_write()
@@ -334,14 +228,47 @@ class _GraphElementAggregateProcess(KeyedProcessFunction):
         value: GraphContribution,
         ctx: KeyedProcessFunction.Context,
     ) -> Iterable[GraphElementEvent]:
-        del ctx
         state_handle = self._require_state()
         previous_json = state_handle.value()
-        previous = GraphElementAggregateState.model_validate_json(previous_json) if previous_json else None
-        result = apply_contribution(previous, value)
+        previous = GraphElementState.model_validate_json(previous_json) if previous_json else None
+        timer_service = cast(ProcessContext, ctx).timer_service()
+        watermark_nano = max(timer_service.current_watermark(), 0) * 1_000_000
+        processing_time = timer_service.current_processing_time()
+        result = apply_contribution(
+            previous,
+            value,
+            ttl_seconds=self._ttl_seconds,
+            event_expiry_base_unix_nano=watermark_nano,
+            processing_time_unix_ms=processing_time,
+        )
+        if result.state is previous:
+            return ()
+        if result.state is None:
+            raise RuntimeError("applying a contribution unexpectedly cleared graph element state")
+        state_handle.update(result.state.model_dump_json())
+        snapshot = result.state.contributors[value.contributor_id]
+        timer_service.register_event_time_timer(_timer_millis(snapshot.event_expires_at_unix_nano))
+        timer_service.register_processing_time_timer(snapshot.processing_expires_at_unix_ms)
+        return (result.event,) if result.event is not None else ()
+
+    def on_timer(
+        self,
+        timestamp: int,
+        ctx: KeyedProcessFunction.OnTimerContext,
+    ) -> Iterable[GraphElementEvent]:
+        state_handle = self._require_state()
+        state_json = state_handle.value()
+        if not state_json:
+            return ()
+        state = GraphElementState.model_validate_json(state_json)
+        time_domain = cast(OnTimerProcessContext, ctx).time_domain()
+        if time_domain is TimeDomain.PROCESSING_TIME:
+            result = expire_contributors(state, clock="processing_time", timestamp=timestamp)
+        else:
+            result = expire_contributors(state, clock="event_time", timestamp=timestamp * 1_000_000)
         if result.state is None:
             state_handle.clear()
-        else:
+        elif result.state != state:
             state_handle.update(result.state.model_dump_json())
         return (result.event,) if result.event is not None else ()
 
@@ -352,13 +279,9 @@ class _GraphElementAggregateProcess(KeyedProcessFunction):
 
 
 class _ObservationTimestampAssigner(TimestampAssigner):
-    def extract_timestamp(self, value: ParsedObservation, record_timestamp: int) -> int:
+    def extract_timestamp(self, value: GraphContribution, record_timestamp: int) -> int:
         del record_timestamp
-        return value.observation.observed_at_unix_nano // 1_000_000
-
-
-def _interaction_key(item: ParsedObservation) -> str:
-    return item.observation.interaction_id
+        return value.observed_at_unix_nano // 1_000_000
 
 
 def _element_key(item: GraphContribution) -> str:
@@ -366,8 +289,7 @@ def _element_key(item: GraphContribution) -> str:
 
 
 def _event_row(event: GraphElementEvent) -> Row:
-    record = event_record(event.model_dump_json(), event.element_id)
-    return Row(record.key, record.value)
+    return Row(event.element_id, event.model_dump_json())
 
 
 def _timer_millis(unix_nano: int) -> int:

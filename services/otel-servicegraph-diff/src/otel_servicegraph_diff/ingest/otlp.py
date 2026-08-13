@@ -17,21 +17,20 @@ def key_values_to_attributes(values: Iterable[KeyValue]) -> dict[str, object]:
 
 
 def any_value_to_python(value: AnyValue) -> object | None:
-    kind = value.WhichOneof("value")
-    if kind is None:
-        return None
-    if kind == "string_value":
-        return value.string_value
-    if kind == "bool_value":
-        return value.bool_value
-    if kind == "int_value":
-        return value.int_value
-    if kind == "double_value":
-        return value.double_value
-    if kind == "bytes_value":
-        return value.bytes_value
-    if kind == "array_value":
-        return [any_value_to_python(item) for item in value.array_value.values]
-    if kind == "kvlist_value":
-        return key_values_to_attributes(value.kvlist_value.values)
-    return None
+    match value.WhichOneof("value"):
+        case "string_value":
+            return value.string_value
+        case "bool_value":
+            return value.bool_value
+        case "int_value":
+            return value.int_value
+        case "double_value":
+            return value.double_value
+        case "bytes_value":
+            return value.bytes_value
+        case "array_value":
+            return [any_value_to_python(item) for item in value.array_value.values]
+        case "kvlist_value":
+            return key_values_to_attributes(value.kvlist_value.values)
+        case _:
+            return None

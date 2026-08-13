@@ -1,38 +1,29 @@
 from __future__ import annotations
 
-from pydantic import TypeAdapter
+import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from otel_servicegraph_diff.engine.elements import (
     GRAPH_REQUEST_FAILED_TOTAL,
     GRAPH_REQUEST_TOTAL,
-    GraphContributionRetract,
-    GraphContributionUpsert,
+    GraphContribution,
     GraphEdge,
     GraphElementEvent,
+    GraphElementLifecycleResult,
+    GraphElementState,
     GraphElementUpsertEvent,
     GraphNode,
     apply_contribution,
     edge_id,
+    expire_contributors,
 )
-from otel_servicegraph_diff.engine.interaction import (
-    InteractionState,
-    apply_observation,
-    build_interaction_id,
-    contributions_for_transition,
-    retract_contributions,
-    state_has_expired,
-)
-from otel_servicegraph_diff.engine.metrics import SERVICE_GRAPH_REQUEST_TOTAL
-from otel_servicegraph_diff.ingest.interaction import observation_from_servicegraph_datapoint
+
+TTL_SECONDS = 5
 
 
 def test_node_contributors_complete_each_others_optional_attributes() -> None:
-    first = apply_contribution(None, _node_upsert("a", 10, {"zone": "eu-1"}), emitted_at_unix_ms=100)
-    second = apply_contribution(
-        first.state,
-        _node_upsert("b", 20, {"version": "2.4"}),
-        emitted_at_unix_ms=101,
-    )
+    first = _apply(None, _node_contribution("a", 10, {"zone": "eu-1"}))
+    second = _apply(first.state, _node_contribution("b", 20, {"version": "2.4"}))
 
     assert isinstance(second.event, GraphElementUpsertEvent)
     assert isinstance(second.event.element, GraphNode)
@@ -40,76 +31,170 @@ def test_node_contributors_complete_each_others_optional_attributes() -> None:
 
 
 def test_node_attribute_conflicts_use_timestamp_then_contributor_id() -> None:
-    state = apply_contribution(None, _node_upsert("z", 10, {"version": "old"})).state
-    state = apply_contribution(state, _node_upsert("z", 20, {"version": "new"})).state
-    result = apply_contribution(state, _node_upsert("a", 20, {"version": "tie-winner"}))
+    state = _apply(None, _node_contribution("z", 10, {"version": "old"})).state
+    state = _apply(state, _node_contribution("z", 20, {"version": "new"})).state
+    result = _apply(state, _node_contribution("a", 20, {"version": "tie-winner"}))
 
     assert isinstance(result.event, GraphElementUpsertEvent)
     assert isinstance(result.event.element, GraphNode)
     assert result.event.element.attributes["version"] == "tie-winner"
 
 
-def test_retraction_recomputes_attributes_and_final_retraction_deletes() -> None:
-    first = apply_contribution(None, _node_upsert("a", 10, {"zone": "eu-1", "version": "1"}))
-    second = apply_contribution(first.state, _node_upsert("b", 20, {"version": "2"}))
+def test_partial_expiry_falls_back_and_final_expiry_deletes() -> None:
+    first = _apply(None, _node_contribution("a", 10, {"zone": "eu-1", "version": "1"}))
+    second = _apply(first.state, _node_contribution("b", 20, {"version": "2"}))
+    assert second.state is not None
 
-    fallback = apply_contribution(second.state, _retract("b", 30), emitted_at_unix_ms=103)
+    fallback = expire_contributors(
+        second.state,
+        clock="event_time",
+        timestamp=_event_expiry(10),
+        emitted_at_unix_ms=103,
+    )
     assert isinstance(fallback.event, GraphElementUpsertEvent)
     assert isinstance(fallback.event.element, GraphNode)
-    assert fallback.event.element.attributes == {"version": "1", "zone": "eu-1"}
+    assert fallback.event.element.attributes == {"version": "2"}
 
-    deleted = apply_contribution(fallback.state, _retract("a", 40), emitted_at_unix_ms=104)
+    assert fallback.state is not None
+    deleted = expire_contributors(
+        fallback.state,
+        clock="event_time",
+        timestamp=_event_expiry(20),
+        emitted_at_unix_ms=104,
+    )
     assert deleted.state is None
     assert deleted.event is not None
     assert deleted.event.operation == "delete"
     assert deleted.event.element is None
 
 
-def test_unknown_retraction_and_unchanged_snapshot_emit_nothing() -> None:
-    first = apply_contribution(None, _node_upsert("a", 10, {"zone": "eu-1"}))
-    unchanged = apply_contribution(first.state, _node_upsert("a", 10, {"zone": "eu-1"}))
-    unknown = apply_contribution(unchanged.state, _retract("missing", 20))
+def test_field_survives_while_another_contributor_still_supplies_it() -> None:
+    first = _apply(None, _node_contribution("a", 10, {"zone": "eu-1"}))
+    second = _apply(first.state, _node_contribution("b", 20, {"zone": "eu-1"}))
+    assert second.state is not None
 
-    assert unchanged.event is None
-    assert unknown.event is None
-    assert unknown.state == unchanged.state
+    result = expire_contributors(second.state, clock="event_time", timestamp=_event_expiry(10))
+
+    assert result.state is not None
+    assert set(result.state.contributors) == {"b"}
+    assert result.event is None
+
+
+def test_refresh_makes_old_event_and_processing_timers_stale() -> None:
+    first = _apply(None, _node_contribution("a", 1_000_000_000, {"version": "1"}), processing_time=100)
+    refreshed = _apply(
+        first.state,
+        _node_contribution("a", 2_000_000_000, {"version": "2"}),
+        processing_time=200,
+    )
+    assert refreshed.state is not None
+
+    old_event = expire_contributors(
+        refreshed.state,
+        clock="event_time",
+        timestamp=_event_expiry(1_000_000_000),
+    )
+    old_processing = expire_contributors(
+        refreshed.state,
+        clock="processing_time",
+        timestamp=100 + TTL_SECONDS * 1_000,
+    )
+
+    assert old_event.state == refreshed.state
+    assert old_event.event is None
+    assert old_processing.state == refreshed.state
+    assert old_processing.event is None
+
+
+def test_processing_time_expires_contributor_when_event_time_is_idle() -> None:
+    active = _apply(
+        None,
+        _node_contribution("a", 1_000_000_000, {"version": "1"}),
+        processing_time=20_000,
+    )
+    assert active.state is not None
+
+    deleted = expire_contributors(
+        active.state,
+        clock="processing_time",
+        timestamp=25_000,
+        emitted_at_unix_ms=25_000,
+    )
+
+    assert deleted.state is None
+    assert deleted.event is not None
+    assert deleted.event.operation == "delete"
+    assert deleted.event.observed_at_unix_nano == _event_expiry(1_000_000_000)
+
+
+def test_one_timer_can_expire_multiple_contributors_with_one_event() -> None:
+    first = _apply(None, _node_contribution("a", 10, {"zone": "eu"}), processing_time=100)
+    second = _apply(first.state, _node_contribution("b", 20, {"version": "2"}), processing_time=100)
+    assert second.state is not None
+
+    result = expire_contributors(
+        second.state,
+        clock="processing_time",
+        timestamp=100 + TTL_SECONDS * 1_000,
+    )
+
+    assert result.state is None
+    assert result.event is not None
+    assert result.event.operation == "delete"
 
 
 def test_edge_metrics_accumulate_without_decreasing_on_partial_expiry() -> None:
-    element_id = edge_id("service:a", "calls", "service:b")
-    edge = GraphEdge(
-        id=element_id,
-        type="calls",
-        source_id="service:a",
-        target_id="service:b",
-    )
-    first = apply_contribution(None, _edge_upsert(edge, "a", 10, requests=3, failures=1))
-    second = apply_contribution(first.state, _edge_upsert(edge, "b", 20, requests=5, failures=0))
+    edge = _edge()
+    first = _apply(None, _edge_contribution(edge, "a", 10, requests=3, failures=1))
+    second = _apply(first.state, _edge_contribution(edge, "b", 20, requests=5, failures=0))
 
     assert second.state is not None
     assert second.state.metrics == {
         GRAPH_REQUEST_FAILED_TOTAL: 1,
         GRAPH_REQUEST_TOTAL: 8,
     }
-    partial = apply_contribution(second.state, _edge_retract(edge, "a", 30))
+    partial = expire_contributors(second.state, clock="event_time", timestamp=_event_expiry(10))
     assert partial.state is not None
     assert partial.state.metrics == second.state.metrics
     assert partial.event is None
 
 
 def test_edge_delete_and_recreation_reset_metric_lifetime() -> None:
-    element_id = edge_id("service:a", "calls", "service:b")
-    edge = GraphEdge(id=element_id, type="calls", source_id="service:a", target_id="service:b")
-    active = apply_contribution(None, _edge_upsert(edge, "a", 10, requests=7))
-    deleted = apply_contribution(active.state, _edge_retract(edge, "a", 20))
-    recreated = apply_contribution(deleted.state, _edge_upsert(edge, "b", 30, requests=2))
+    edge = _edge()
+    active = _apply(None, _edge_contribution(edge, "a", 10, requests=7))
+    assert active.state is not None
+    deleted = expire_contributors(active.state, clock="event_time", timestamp=_event_expiry(10))
+    recreated = _apply(deleted.state, _edge_contribution(edge, "b", 30, requests=2))
 
     assert recreated.state is not None
     assert recreated.state.metrics == {GRAPH_REQUEST_TOTAL: 2}
 
 
+def test_older_contributor_observation_is_ignored_without_refreshing_expiry() -> None:
+    first = _apply(None, _node_contribution("a", 20, {"version": "new"}), processing_time=200)
+    late = _apply(first.state, _node_contribution("a", 10, {"version": "old"}), processing_time=300)
+
+    assert late.state is first.state
+    assert late.event is None
+
+
+def test_state_round_trip_preserves_contributor_expiry() -> None:
+    result = _apply(None, _node_contribution("a", 10, {"zone": "eu"}), processing_time=100)
+    assert result.state is not None
+
+    restored = GraphElementState.model_validate_json(result.state.model_dump_json())
+
+    assert restored == result.state
+    assert restored.contributors["a"].event_expires_at_unix_nano == _event_expiry(10)
+    assert restored.contributors["a"].processing_expires_at_unix_ms == 5_100
+
+
 def test_event_contract_round_trips_as_discriminated_union() -> None:
-    result = apply_contribution(None, _node_upsert("a", 10, {"zone": "eu-1"}), emitted_at_unix_ms=100)
+    result = _apply(
+        None,
+        _node_contribution("a", 10, {"zone": "eu-1"}),
+        emitted_at=100,
+    )
     assert result.event is not None
 
     adapter: TypeAdapter[GraphElementEvent] = TypeAdapter(GraphElementEvent)
@@ -121,78 +206,76 @@ def test_event_contract_round_trips_as_discriminated_union() -> None:
     assert restored.element_id == "k8s.pod:pod-1"
 
 
-def test_interaction_transition_extracts_nodes_edges_and_only_metric_deltas() -> None:
-    observation = _observation(
-        value=3,
-        observed_at=1_000_000_000,
-        attributes={
-            "client": "frontend",
-            "server": "checkout",
-            "client_service.version": "1.0",
-            "server_service.version": "2.0",
-            "server_http.route": "/orders/{id}",
-            "server_http.request.method": "GET",
-        },
+def test_contribution_validates_element_and_metric_identity() -> None:
+    node = GraphNode(id="service:a", type="service")
+    with pytest.raises(ValidationError, match="element_id must match"):
+        GraphContribution(
+            element_id="service:b",
+            contributor_id="a",
+            observed_at_unix_nano=1,
+            element=node,
+        )
+    with pytest.raises(ValidationError, match="node contributions"):
+        GraphContribution(
+            element_id=node.id,
+            contributor_id="a",
+            observed_at_unix_nano=1,
+            element=node,
+            metric_deltas={GRAPH_REQUEST_TOTAL: 1},
+        )
+    edge = _edge()
+    with pytest.raises(ValidationError):
+        GraphContribution(
+            element_id=edge.id,
+            contributor_id="a",
+            observed_at_unix_nano=1,
+            element=edge,
+            metric_deltas={GRAPH_REQUEST_TOTAL: -1},
+        )
+
+
+def test_contribution_requires_positive_ttl() -> None:
+    with pytest.raises(ValueError, match="TTL must be greater than zero"):
+        apply_contribution(
+            None,
+            _node_contribution("a", 10, {}),
+            ttl_seconds=0,
+            processing_time_unix_ms=100,
+        )
+
+
+def test_same_element_id_rejects_incompatible_semantic_identity() -> None:
+    active = _apply(None, _node_contribution("a", 10, {"zone": "eu"}))
+    incompatible = GraphContribution(
+        element_id="k8s.pod:pod-1",
+        contributor_id="b",
+        observed_at_unix_nano=20,
+        element=GraphNode(id="k8s.pod:pod-1", type="service"),
     )
-    result = apply_observation(None, observation, ttl_seconds=5)
-    contributions = contributions_for_transition(None, result.state, observation)
 
-    assert result.changed
-    assert any(
-        isinstance(item, GraphContributionUpsert)
-        and isinstance(item.element, GraphNode)
-        and item.element.id == "service:frontend"
-        for item in contributions
+    with pytest.raises(ValueError, match="conflicts with graph element identity"):
+        _apply(active.state, incompatible)
+
+
+def _apply(
+    previous: GraphElementState | None,
+    contribution: GraphContribution,
+    *,
+    processing_time: int = 1_000,
+    emitted_at: int = 100,
+) -> GraphElementLifecycleResult:
+    return apply_contribution(
+        previous,
+        contribution,
+        ttl_seconds=TTL_SECONDS,
+        processing_time_unix_ms=processing_time,
+        emitted_at_unix_ms=emitted_at,
     )
-    dependency = next(
-        item
-        for item in contributions
-        if isinstance(item, GraphContributionUpsert)
-        and isinstance(item.element, GraphEdge)
-        and item.element.source_id == "service:frontend"
-        and item.element.target_id == "service:checkout"
-    )
-    assert dependency.element.attributes == {}
-    assert dependency.metric_deltas == {GRAPH_REQUEST_TOTAL: 3}
 
 
-def test_interaction_expiry_retracts_every_current_element() -> None:
-    observation = _observation(value=1, observed_at=1_000_000_000)
-    state = apply_observation(None, observation, ttl_seconds=5).state
-
-    retractions = retract_contributions(state)
-
-    assert retractions
-    assert {item.element_id for item in retractions} == {
-        item.element_id for item in contributions_for_transition(None, state, observation)
-    }
-    assert not state_has_expired(state, 5_999_999_999)
-    assert state_has_expired(state, 6_000_000_000)
-
-
-def test_interaction_state_rejects_late_and_repeated_cumulative_samples() -> None:
-    first_observation = _observation(value=10, observed_at=2_000_000_000)
-    first = apply_observation(None, first_observation)
-    repeated = apply_observation(first.state, _observation(value=10, observed_at=3_000_000_000))
-    late = apply_observation(first.state, _observation(value=11, observed_at=1_000_000_000))
-
-    assert not repeated.changed
-    assert repeated.state == first.state
-    assert not late.changed
-    assert late.state == first.state
-    assert InteractionState.model_validate_json(first.state.model_dump_json()) == first.state
-
-
-def test_interaction_identity_is_stable_across_dimension_order() -> None:
-    left = build_interaction_id("a", "b", "calls", {"route": "/x", "status": 200})
-    right = build_interaction_id("a", "b", "calls", {"status": 200, "route": "/x"})
-
-    assert left == right
-
-
-def _node_upsert(contributor: str, observed_at: int, attributes: dict[str, object]) -> GraphContributionUpsert:
+def _node_contribution(contributor: str, observed_at: int, attributes: dict[str, object]) -> GraphContribution:
     node = GraphNode(id="k8s.pod:pod-1", type="k8s.pod", attributes=attributes)
-    return GraphContributionUpsert(
+    return GraphContribution(
         element_id=node.id,
         contributor_id=contributor,
         observed_at_unix_nano=observed_at,
@@ -200,26 +283,18 @@ def _node_upsert(contributor: str, observed_at: int, attributes: dict[str, objec
     )
 
 
-def _retract(contributor: str, observed_at: int) -> GraphContributionRetract:
-    return GraphContributionRetract(
-        element_id="k8s.pod:pod-1",
-        contributor_id=contributor,
-        observed_at_unix_nano=observed_at,
-    )
-
-
-def _edge_upsert(
+def _edge_contribution(
     edge: GraphEdge,
     contributor: str,
     observed_at: int,
     *,
     requests: int,
     failures: int | None = None,
-) -> GraphContributionUpsert:
+) -> GraphContribution:
     deltas: dict[str, int | float] = {GRAPH_REQUEST_TOTAL: requests}
     if failures is not None:
         deltas[GRAPH_REQUEST_FAILED_TOTAL] = failures
-    return GraphContributionUpsert(
+    return GraphContribution(
         element_id=edge.id,
         contributor_id=contributor,
         observed_at_unix_nano=observed_at,
@@ -228,26 +303,10 @@ def _edge_upsert(
     )
 
 
-def _edge_retract(edge: GraphEdge, contributor: str, observed_at: int) -> GraphContributionRetract:
-    return GraphContributionRetract(
-        element_id=edge.id,
-        contributor_id=contributor,
-        observed_at_unix_nano=observed_at,
-    )
+def _edge() -> GraphEdge:
+    element_id = edge_id("service:a", "calls", "service:b")
+    return GraphEdge(id=element_id, type="calls", source_id="service:a", target_id="service:b")
 
 
-def _observation(
-    *,
-    value: int,
-    observed_at: int,
-    attributes: dict[str, str | int | bool] | None = None,
-):
-    observation = observation_from_servicegraph_datapoint(
-        SERVICE_GRAPH_REQUEST_TOTAL,
-        attributes or {"client": "frontend", "server": "checkout"},
-        value,
-        observed_at,
-        start_time_unix_nano=1,
-    )
-    assert observation is not None
-    return observation
+def _event_expiry(observed_at: int) -> int:
+    return observed_at + TTL_SECONDS * 1_000_000_000

@@ -141,13 +141,16 @@ The runtime ServiceAccount must have ConfigMap CRUD/list/watch. It does not
 need finalizer permissions. Recovery also requires the existing claim and the
 same stable cluster and job IDs.
 
-## Flink rejects records
+## Flink rejects inputs
 
-An increasing `rejected_records` counter means input records failed OTLP parsing
-or semantic normalization. Inspect TaskManager logs and a sample Kafka record.
+An increasing `rejected_inputs` counter means an OTLP payload or supported
+service-graph datapoint failed parsing or semantic normalization. Inspect the
+bounded reason and detail in TaskManager logs, then inspect a sample Kafka
+record through an appropriately secured tool.
 
-Only supported service-graph metric names and numeric points with required
-client/server fields affect state.
+Only supported delta service-graph sums with finite, nonnegative values,
+timestamps, and required client/server fields affect state. Zero deltas and
+unrelated metrics are ignored.
 
 ## API reports ready but data is old
 

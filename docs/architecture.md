@@ -34,19 +34,19 @@ not metric labels added arbitrarily by the Flink job.
 
 ## Lifecycle processing
 
-Only request and failed-request service-graph counters affect lifecycle. The
-first keyed stage maintains private interaction state derived from client,
-server, connection type, and canonical dimensions. It owns event-time and
-processing-time expiry timers and emits element contribution upserts and
-retractions. Interactions are never published.
+Only request and failed-request service-graph counters affect lifecycle. Each
+datapoint is immediately expanded into semantic node and edge contributions.
+The contributor ID is derived from its client, server, connection type, and
+canonical dimensions; no interaction state is retained after extraction.
 
-The second stage is keyed by graph element ID. Nodes with the same semantic ID
+One stage keyed by graph element ID stores all active contributor snapshots and
+their event-time and processing-time expiries. Nodes with the same semantic ID
 and edges with the same source/type/target identity share state. Complementary
 optional attributes are merged. Conflicts choose the newest observation, with
 contributor ID as a deterministic tie-breaker. Dependency edges accumulate
 request deltas for their active lifetime.
 
-The element stage publishes complete upserts when merged state changes and a
+The lifecycle stage publishes complete upserts when merged state changes and a
 delete when the final contributor expires. Kafka uses `element_id` as its key.
 At-least-once sink delivery is safe because events have deterministic IDs and
 projection operations are idempotent.
@@ -68,8 +68,8 @@ collection independently reject graph mutations. The provider identity has a
 narrow write exception for its `TINKERPOP-GRAPH-VARIABLES` version document,
 which provider `4.0.0` rewrites while opening the graph.
 
-The semantic package owns interpretation and pure transitions. Flink owns keyed
-state, timers, checkpoints, and graph lifecycle. Collector owns trace pairing
+The semantic package owns generated identities and models. The Flink application
+owns extraction, pure lifecycle transitions, keyed state, timers, and checkpoints. Collector owns trace pairing
 and service-graph metrics. The indexer owns Kafka offsets and the ArangoDB
 current-state projection. Gremlin Server exposes read-only traversal. Helm owns
 runtime resources.

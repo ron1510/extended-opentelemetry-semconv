@@ -50,7 +50,7 @@ job:
 | `restartAttempts` | Fixed-delay job restart attempts |
 | `restartDelaySeconds` | Delay between restart attempts |
 
-`stateTtlSeconds` must exceed interaction TTL plus allowed lateness.
+`stateTtlSeconds` must exceed contributor TTL plus allowed lateness.
 
 ## Kafka contract
 
