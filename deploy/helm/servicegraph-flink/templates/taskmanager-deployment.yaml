@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "servicegraph-flink.fullname" . }}-taskmanager
+  labels:
+    {{- include "servicegraph-flink.labels" . | nindent 4 }}
+    app.kubernetes.io/component: taskmanager
+spec:
+  replicas: {{ .Values.application.taskManagerReplicas }}
+  selector:
+    matchLabels:
+      {{- include "servicegraph-flink.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: taskmanager
+  template:
+    metadata:
+      labels:
+        {{- include "servicegraph-flink.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: taskmanager
+      annotations:
+        checksum/flink-config: {{ include (print $.Template.BasePath "/flink-config.yaml") . | sha256sum }}
+        helm.sh/revision: {{ .Release.Revision | quote }}
+    spec:
+      serviceAccountName: {{ include "servicegraph-flink.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        {{- with .Values.podSecurityContext.runAsUser }}
+        runAsUser: {{ . }}
+        {{- end }}
+        {{- with .Values.podSecurityContext.runAsGroup }}
+        runAsGroup: {{ . }}
+        {{- end }}
+        seccompProfile:
+          type: RuntimeDefault
+        {{- with .Values.podSecurityContext.fsGroup }}
+        fsGroup: {{ . }}
+        fsGroupChangePolicy: OnRootMismatch
+        {{- end }}
+      containers:
+        - name: taskmanager
+          image: {{ .Values.image.ref | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/opt/flink/bin/taskmanager.sh"]
+          args: ["start-foreground"]
+          env:
+            - name: ROOT_LOG_LEVEL
+              value: {{ .Values.logging.rootLevel | upper | quote }}
+          ports:
+            - name: rpc
+              containerPort: 6122
+          startupProbe:
+            tcpSocket:
+              port: rpc
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: rpc
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: rpc
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            {{- toYaml .Values.resources.taskManager | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: flink-config
+              mountPath: /opt/flink/conf/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: flink-config
+              mountPath: /opt/flink/conf/log4j-console.properties
+              subPath: log4j-console.properties
+              readOnly: true
+            - name: flink-state
+              mountPath: /flink-state
+            - name: flink-log
+              mountPath: /opt/flink/log
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: flink-config
+          configMap:
+            name: {{ include "servicegraph-flink.fullname" . }}-config
+        - name: flink-state
+          persistentVolumeClaim:
+            claimName: {{ include "servicegraph-flink.claimName" . }}
+        - name: flink-log
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.logSizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}

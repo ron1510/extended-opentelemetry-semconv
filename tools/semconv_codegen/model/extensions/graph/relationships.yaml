@@ -1,0 +1,297 @@
+groups:
+  - id: relationship.service_namespace_contains_service
+    type: relationship
+    name: contains
+    source_entity: service.namespace
+    target_entity: service
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A service namespace contains a service observed with that namespace.
+
+  - id: relationship.service_contains_service_instance
+    type: relationship
+    name: contains
+    source_entity: service
+    target_entity: service.instance
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A service contains an observed service instance.
+
+  - id: relationship.k8s_cluster_contains_namespace
+    type: relationship
+    name: contains
+    source_entity: k8s.cluster
+    target_entity: k8s.namespace
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes cluster contains an observed namespace.
+
+  - id: relationship.k8s_cluster_contains_node
+    type: relationship
+    name: contains
+    source_entity: k8s.cluster
+    target_entity: k8s.node
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes cluster contains an observed node.
+
+  - id: relationship.k8s_cluster_contains_persistentvolume
+    type: relationship
+    name: contains
+    source_entity: k8s.cluster
+    target_entity: k8s.persistentvolume
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes cluster contains an observed persistent volume.
+
+  - id: relationship.k8s_namespace_contains_cronjob
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.cronjob
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed CronJob.
+
+  - id: relationship.k8s_namespace_contains_daemonset
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.daemonset
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed DaemonSet.
+
+  - id: relationship.k8s_namespace_contains_deployment
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.deployment
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed Deployment.
+
+  - id: relationship.k8s_namespace_contains_hpa
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.hpa
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed HPA.
+
+  - id: relationship.k8s_namespace_contains_job
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.job
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed Job.
+
+  - id: relationship.k8s_namespace_contains_persistentvolumeclaim
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.persistentvolumeclaim
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed PersistentVolumeClaim.
+
+  - id: relationship.k8s_namespace_contains_pod
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.pod
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed pod.
+
+  - id: relationship.k8s_namespace_contains_replicaset
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.replicaset
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed ReplicaSet.
+
+  - id: relationship.k8s_namespace_contains_replicationcontroller
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.replicationcontroller
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed ReplicationController.
+
+  - id: relationship.k8s_namespace_contains_resourcequota
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.resourcequota
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed ResourceQuota.
+
+  - id: relationship.k8s_namespace_contains_service
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.service
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed Kubernetes Service.
+
+  - id: relationship.k8s_namespace_contains_statefulset
+    type: relationship
+    name: contains
+    source_entity: k8s.namespace
+    target_entity: k8s.statefulset
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes namespace contains an observed StatefulSet.
+
+  - id: relationship.k8s_node_runs_pod
+    type: relationship
+    name: runs
+    source_entity: k8s.node
+    target_entity: k8s.pod
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes node runs an observed pod.
+
+  - id: relationship.k8s_pod_contains_container
+    type: relationship
+    name: contains
+    source_entity: k8s.pod
+    target_entity: k8s.container
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A pod contains an observed container.
+
+  - id: relationship.k8s_pod_runs_service
+    type: relationship
+    name: runs
+    source_entity: k8s.pod
+    target_entity: service
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A pod runs code for an observed service.
+
+  - id: relationship.k8s_pod_runs_service_instance
+    type: relationship
+    name: runs
+    source_entity: k8s.pod
+    target_entity: service.instance
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A pod runs an observed service instance.
+
+  - id: relationship.container_runtime_runs_k8s_container
+    type: relationship
+    name: runs
+    source_entity: container.runtime
+    target_entity: k8s.container
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A container runtime runs an observed Kubernetes container.
+
+  - id: relationship.k8s_container_runs_process
+    type: relationship
+    name: runs
+    source_entity: k8s.container
+    target_entity: process
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A Kubernetes container runs an observed process.
+
+  - id: relationship.process_uses_executable
+    type: relationship
+    name: uses
+    source_entity: process
+    target_entity: process.executable
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A process uses an observed executable.
+
+  - id: relationship.process_uses_runtime
+    type: relationship
+    name: uses
+    source_entity: process
+    target_entity: process.runtime
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A process uses an observed runtime.
+
+  - id: relationship.service_instrumented_by_telemetry_sdk
+    type: relationship
+    name: instrumented_by
+    source_entity: service
+    target_entity: telemetry.sdk
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A service is instrumented by an observed telemetry SDK.
+
+  - id: relationship.service_instrumented_by_telemetry_distro
+    type: relationship
+    name: instrumented_by
+    source_entity: service
+    target_entity: telemetry.distro
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A service is instrumented by an observed telemetry distribution.
+
+  - id: relationship.service_built_from_vcs_repository
+    type: relationship
+    name: built_from
+    source_entity: service
+    target_entity: vcs.repository
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A service was built from an observed VCS repository.
+
+  - id: relationship.vcs_repository_contains_ref
+    type: relationship
+    name: contains
+    source_entity: vcs.repository
+    target_entity: vcs.ref
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A VCS repository contains an observed ref.
+
+  - id: relationship.service_exposes_app_endpoint
+    type: relationship
+    name: exposes
+    source_entity: service
+    target_entity: app.endpoint
+    source_signals: [trace, service_graph]
+    stability: development
+    brief: A service exposes an observed application endpoint.
+
+  - id: relationship.service_calls_service
+    type: relationship
+    name: calls
+    source_entity: service
+    target_entity: service
+    source_signals: [service_graph]
+    stability: development
+    brief: A service calls another observed service.
+
+  - id: relationship.service_publishes_to_service
+    type: relationship
+    name: publishes_to
+    source_entity: service
+    target_entity: service
+    source_signals: [service_graph]
+    stability: development
+    brief: A service publishes messages consumed by another observed service.
+
+  - id: relationship.service_queries_service
+    type: relationship
+    name: queries
+    source_entity: service
+    target_entity: service
+    source_signals: [service_graph]
+    stability: development
+    brief: A service queries another observed service or database-service facade.

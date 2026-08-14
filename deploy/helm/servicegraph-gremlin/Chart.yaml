@@ -1,0 +1,6 @@
+apiVersion: v2
+name: servicegraph-gremlin
+description: Read-only Gremlin Server for the ArangoDB service graph.
+type: application
+version: 0.1.0
+appVersion: "3.8.1"

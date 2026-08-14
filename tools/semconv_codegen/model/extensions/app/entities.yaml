@@ -1,0 +1,19 @@
+groups:
+  - id: entity.app.endpoint
+    type: entity
+    stability: development
+    name: app.endpoint
+    brief: >
+      A logical HTTP endpoint exposed by an application service.
+    attributes:
+      - ref: service.name
+        requirement_level: required
+        role: identifying
+      - ref: service.namespace
+        role: identifying
+      - ref: http.request.method
+        requirement_level: required
+        role: identifying
+      - ref: http.route
+        requirement_level: required
+        role: identifying

@@ -1,0 +1,81 @@
+{{- if not .Values.streamContract.kafka.brokers }}
+{{- fail "streamContract.kafka.brokers must contain at least one broker" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "servicegraph-indexer.fullname" . }}
+  labels:
+    {{- include "servicegraph-indexer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "servicegraph-indexer.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "servicegraph-indexer.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ required "serviceAccountName is required" .Values.serviceAccountName }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: indexer
+          image: {{ include "servicegraph-indexer.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- include "servicegraph-indexer.arangoEnv" . | nindent 12 }}
+            - name: SERVICEGRAPH_INDEXER_KAFKA_BOOTSTRAP_SERVERS
+              value: {{ join "," .Values.streamContract.kafka.brokers | quote }}
+            - name: SERVICEGRAPH_INDEXER_KAFKA_SECURITY_PROTOCOL
+              value: {{ .Values.streamContract.kafka.security.protocol | quote }}
+            - name: SERVICEGRAPH_INDEXER_INPUT_TOPIC
+              value: {{ .Values.streamContract.topics.interactionEvents | quote }}
+            - name: SERVICEGRAPH_INDEXER_CONSUMER_GROUP_ID
+              value: {{ .Values.consumerGroupId | quote }}
+            {{- if ne .Values.streamContract.kafka.security.protocol "PLAINTEXT" }}
+            - name: SERVICEGRAPH_INDEXER_KAFKA_SASL_MECHANISM
+              value: {{ .Values.streamContract.kafka.security.saslMechanism | quote }}
+            - name: SERVICEGRAPH_INDEXER_KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "streamContract.kafka.security.existingSecret is required for Kafka SASL" .Values.streamContract.kafka.security.existingSecret | quote }}
+                  key: {{ .Values.streamContract.kafka.security.usernameKey | quote }}
+            - name: SERVICEGRAPH_INDEXER_KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamContract.kafka.security.existingSecret | quote }}
+                  key: {{ .Values.streamContract.kafka.security.passwordKey | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}

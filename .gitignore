@@ -1,0 +1,16 @@
+.agents/*
+!.agents/skills/
+!.agents/skills/**
+.idea/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.tmp/
+.test-tmp/
+.venv/
+*.egg-info/
+build/
+dist/
+node_modules/
+site/

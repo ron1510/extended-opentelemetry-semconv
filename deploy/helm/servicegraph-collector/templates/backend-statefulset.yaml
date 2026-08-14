@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "servicegraph-collector.fullname" . }}-backend
+  labels:
+    {{- include "servicegraph-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: servicegraph-backend
+spec:
+  serviceName: {{ include "servicegraph-collector.fullname" . }}-backend-headless
+  replicas: {{ .Values.backend.replicaCount }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "servicegraph-collector.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: servicegraph-backend
+  template:
+    metadata:
+      labels:
+        {{- include "servicegraph-collector.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: servicegraph-backend
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/backend-configmap.yaml") . | sha256sum }}
+        {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "servicegraph-collector.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 90
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: otelcol
+          image: {{ include "servicegraph-collector.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config=/etc/otelcol/config.yaml"]
+          {{- if ne .Values.streamContract.kafka.security.protocol "PLAINTEXT" }}
+          env:
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "streamContract.kafka.security.existingSecret is required for Kafka SASL" .Values.streamContract.kafka.security.existingSecret }}
+                  key: {{ .Values.streamContract.kafka.security.usernameKey }}
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamContract.kafka.security.existingSecret }}
+                  key: {{ .Values.streamContract.kafka.security.passwordKey }}
+          {{- end }}
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+          startupProbe:
+            tcpSocket:
+              port: otlp-grpc
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: otlp-grpc
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: otlp-grpc
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "servicegraph-collector.fullname" . }}-backend
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

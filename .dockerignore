@@ -1,0 +1,13 @@
+.git
+.hypothesis
+.pytest_cache
+.ruff_cache
+.pr-work
+.tmp
+.test-tmp
+build
+dist
+vendor
+node_modules
+__pycache__
+*.pyc

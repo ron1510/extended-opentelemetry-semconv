@@ -1,0 +1,76 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: "0.156.0"
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+router:
+  # Both stateless routers use the same fixed backend hash ring.
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 384Mi
+  queueSize: 100000
+  podAnnotations: {}
+
+backend:
+  # Keep this at two: changing the fixed ring remaps in-flight traces.
+  replicaCount: 2
+  serviceGraph:
+    storeTtl: 10s
+    storeMaxItems: 10000
+    metricsFlushInterval: 5s
+    metricBatchSize: 64
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  podAnnotations: {}
+
+streamContract:
+  kafka:
+    brokers:
+      - kafka.example.internal:9093
+    security:
+      protocol: SASL_SSL
+      saslMechanism: SCRAM-SHA-256
+      existingSecret: servicegraph-kafka-auth
+      usernameKey: username
+      passwordKey: password
+  topics:
+    servicegraphMetrics: otel.servicegraph.metrics
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+topologySpreadConstraints: []
+nodeSelector: {}
+tolerations: []
+affinity: {}

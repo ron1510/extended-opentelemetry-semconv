@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "servicegraph-collector.fullname" . }}-router
+  labels:
+    {{- include "servicegraph-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+data:
+  config.yaml: |
+    extensions:
+      health_check:
+        endpoint: localhost:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      batch/traces:
+        timeout: 1s
+        send_batch_size: 256
+    exporters:
+      load_balancing:
+        routing_key: traceID
+        protocol:
+          otlp:
+            timeout: 5s
+            tls:
+              insecure: true
+            sending_queue:
+              enabled: true
+              sizer: items
+              queue_size: 10000
+            retry_on_failure:
+              enabled: true
+              initial_interval: 1s
+              max_interval: 30s
+              max_elapsed_time: 0s
+        resolver:
+          static:
+            hostnames:
+              {{- $root := . }}
+              {{- range $ordinal := until (int .Values.backend.replicaCount) }}
+              - {{ include "servicegraph-collector.fullname" $root }}-backend-{{ $ordinal }}.{{ include "servicegraph-collector.fullname" $root }}-backend-headless.{{ $root.Release.Namespace }}.svc:4317
+              {{- end }}
+        timeout: 10s
+        sending_queue:
+          enabled: true
+          sizer: items
+          queue_size: {{ .Values.router.queueSize }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 0s
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch/traces]
+          exporters: [load_balancing]
