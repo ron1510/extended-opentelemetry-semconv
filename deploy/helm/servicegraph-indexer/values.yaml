@@ -1,0 +1,67 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: registry.internal.example/extended-otel-servicegraph-indexer
+  tag: "0.1.0"
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccountName: default
+
+replicas: 1
+
+arangodb:
+  urls:
+    - http://servicegraph-arangodb:8529
+  database: servicegraph
+  graph: servicegraph
+  verifyTls: true
+  allowDatabaseCreation: false
+  connectionDeadlineSeconds: 300
+  auth:
+    existingSecret: servicegraph-arangodb-writer
+    usernameKey: username
+    passwordKey: password
+
+streamContract:
+  kafka:
+    brokers:
+      - kafka.internal.example:9092
+    security:
+      protocol: SASL_SSL
+      saslMechanism: SCRAM-SHA-256
+      existingSecret: servicegraph-kafka-auth
+      usernameKey: username
+      passwordKey: password
+  topics:
+    interactionEvents: graph.elements.events
+
+consumerGroupId: servicegraph-arangodb-indexer
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+emptyDir:
+  tmpSizeLimit: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

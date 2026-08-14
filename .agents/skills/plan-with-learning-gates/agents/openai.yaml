@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan With Learning Gates"
+  short_description: "Add learning checkpoints to engineering plans"
+  default_prompt: "Use $plan-with-learning-gates to create a plan that preserves implementation speed and engineering learning."

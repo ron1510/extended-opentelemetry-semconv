@@ -1,0 +1,172 @@
+{{- if not (regexMatch "^[0-9a-fA-F]{32}$" .Values.job.fixedJobId) }}
+{{- fail "job.fixedJobId must contain exactly 32 hexadecimal characters" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "servicegraph-flink.fullname" . }}-submitter
+  labels:
+    {{- include "servicegraph-flink.labels" . | nindent 4 }}
+    app.kubernetes.io/component: submitter
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "servicegraph-flink.labels" . | nindent 8 }}
+        app.kubernetes.io/component: submitter
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "servicegraph-flink.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        {{- with .Values.podSecurityContext.runAsUser }}
+        runAsUser: {{ . }}
+        {{- end }}
+        {{- with .Values.podSecurityContext.runAsGroup }}
+        runAsGroup: {{ . }}
+        {{- end }}
+        seccompProfile:
+          type: RuntimeDefault
+        {{- with .Values.podSecurityContext.fsGroup }}
+        fsGroup: {{ . }}
+        fsGroupChangePolicy: OnRootMismatch
+        {{- end }}
+      containers:
+        - name: submitter
+          image: {{ .Values.image.ref | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              decision=0
+              python - <<'PY' || decision=$?
+              import json
+              import os
+              import sys
+              import time
+              import urllib.error
+              import urllib.request
+
+              rest_url = os.environ["FLINK_REST_URL"]
+              job_id = os.environ["FLINK_JOB_ID"]
+              deadline = time.monotonic() + 480
+
+              while True:
+                  try:
+                      with urllib.request.urlopen(f"{rest_url}/overview", timeout=3):
+                          break
+                  except (OSError, urllib.error.URLError):
+                      if time.monotonic() >= deadline:
+                          print(f"Flink REST endpoint {rest_url} did not become ready", file=sys.stderr)
+                          sys.exit(1)
+                      time.sleep(2)
+
+              try:
+                  with urllib.request.urlopen(f"{rest_url}/jobs/{job_id}", timeout=5) as response:
+                      state = json.load(response).get("state", "UNKNOWN")
+              except urllib.error.HTTPError as error:
+                  if error.code == 404:
+                      sys.exit(0)
+                  raise
+
+              terminal_states = {"CANCELED", "FAILED", "FINISHED"}
+              if state in terminal_states:
+                  print(
+                      f"Flink job {job_id} is terminal ({state}); choose a new fixedJobId "
+                      "for an intentional replacement",
+                      file=sys.stderr,
+                  )
+                  sys.exit(43)
+
+              print(f"Flink job {job_id} already exists in state {state}; skipping submission")
+              sys.exit(42)
+              PY
+
+              if [ "${decision}" -eq 42 ]; then
+                exit 0
+              fi
+              if [ "${decision}" -ne 0 ]; then
+                exit "${decision}"
+              fi
+
+              restore_args=()
+              if [ "${FLINK_IS_UPGRADE}" = "true" ]; then
+                if [ ! -s "${FLINK_SAVEPOINT_HANDOFF}" ]; then
+                  echo "Upgrade savepoint handoff ${FLINK_SAVEPOINT_HANDOFF} is missing" >&2
+                  exit 44
+                fi
+                savepoint_path="$(cat "${FLINK_SAVEPOINT_HANDOFF}")"
+                restore_args+=(--fromSavepoint "${savepoint_path}")
+                {{- if .Values.job.allowNonRestoredState }}
+                restore_args+=(--allowNonRestoredState)
+                {{- end }}
+                echo "Restoring Flink job ${FLINK_JOB_ID} from ${savepoint_path}"
+              fi
+
+              exec /opt/flink/bin/flink run --detached \
+                -m "${FLINK_REST_ADDRESS}" \
+                -D'$internal.pipeline.job-id'="${FLINK_JOB_ID}" \
+                --parallelism {{ .Values.application.parallelism }} \
+                -Dpython.client.executable=/usr/local/bin/python \
+                -Dpython.executable=/usr/local/bin/python \
+                "${restore_args[@]}" \
+                --pyModule otel_servicegraph_diff.flink_job \
+                --pyFiles /opt/application
+          env:
+            - name: FLINK_REST_URL
+              value: http://{{ include "servicegraph-flink.restServiceName" . }}:8081
+            - name: FLINK_REST_ADDRESS
+              value: {{ printf "%s:8081" (include "servicegraph-flink.restServiceName" .) | quote }}
+            - name: FLINK_JOB_ID
+              value: {{ .Values.job.fixedJobId | lower | quote }}
+            - name: FLINK_IS_UPGRADE
+              value: {{ .Release.IsUpgrade | quote }}
+            - name: FLINK_SAVEPOINT_HANDOFF
+              value: {{ printf "/flink-state/upgrades/revision-%d.savepoint" (.Release.Revision | int) | quote }}
+            - name: ROOT_LOG_LEVEL
+              value: {{ .Values.logging.rootLevel | upper | quote }}
+            {{- include "servicegraph-flink.kafkaEnvironment" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources.submitter | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: flink-state
+              mountPath: /flink-state
+            - name: flink-log
+              mountPath: /opt/flink/log
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: flink-state
+          persistentVolumeClaim:
+            claimName: {{ include "servicegraph-flink.claimName" . }}
+        - name: flink-log
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}

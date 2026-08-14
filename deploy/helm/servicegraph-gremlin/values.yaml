@@ -1,0 +1,59 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: registry.internal.example/extended-otel-servicegraph-gremlin
+  tag: "0.1.0"
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccountName: default
+
+replicas: 1
+service:
+  port: 8182
+
+gremlin:
+  evaluationTimeoutMs: 30000
+  traversalSource: g
+
+arangodb:
+  host: servicegraph-arangodb
+  port: 8529
+  database: servicegraph
+  graph: servicegraph
+  auth:
+    existingSecret: servicegraph-arangodb-reader
+    usernameKey: username
+    passwordKey: password
+
+jvm:
+  options: "-Xms128m -Xmx384m -XX:MaxRAMPercentage=75"
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+emptyDir:
+  runtimeSizeLimit: 16Mi
+  tmpSizeLimit: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

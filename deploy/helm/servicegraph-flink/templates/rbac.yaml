@@ -1,0 +1,27 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "servicegraph-flink.fullname" . }}
+  labels:
+    {{- include "servicegraph-flink.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "servicegraph-flink.fullname" . }}
+  labels:
+    {{- include "servicegraph-flink.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "servicegraph-flink.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "servicegraph-flink.fullname" . }}
+{{- end }}

@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "servicegraph-gremlin.fullname" . }}
+  labels:
+    {{- include "servicegraph-gremlin.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "servicegraph-gremlin.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "servicegraph-gremlin.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ required "serviceAccountName is required" .Values.serviceAccountName }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gremlin
+          image: {{ include "servicegraph-gremlin.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: GREMLIN_SERVER_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: JAVA_OPTIONS
+              value: {{ .Values.jvm.options | quote }}
+            - name: ARANGO_HOST
+              value: {{ .Values.arangodb.host | quote }}
+            - name: ARANGO_PORT
+              value: {{ .Values.arangodb.port | quote }}
+            - name: ARANGO_DATABASE
+              value: {{ .Values.arangodb.database | quote }}
+            - name: ARANGO_GRAPH
+              value: {{ .Values.arangodb.graph | quote }}
+            - name: ARANGO_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "arangodb.auth.existingSecret is required" .Values.arangodb.auth.existingSecret | quote }}
+                  key: {{ .Values.arangodb.auth.usernameKey | quote }}
+            - name: ARANGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.arangodb.auth.existingSecret | quote }}
+                  key: {{ .Values.arangodb.auth.passwordKey | quote }}
+          ports:
+            - name: gremlin
+              containerPort: 8182
+          readinessProbe:
+            tcpSocket:
+              port: gremlin
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: gremlin
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/servicegraph-gremlin
+              readOnly: true
+            - name: runtime
+              mountPath: /opt/gremlin-server/runtime-conf
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "servicegraph-gremlin.fullname" . }}-config
+        - name: runtime
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.runtimeSizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}

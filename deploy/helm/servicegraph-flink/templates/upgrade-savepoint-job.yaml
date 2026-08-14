@@ -1,0 +1,178 @@
+{{- if .Release.IsUpgrade }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "servicegraph-flink.fullname" . }}-upgrade-savepoint
+  labels:
+    {{- include "servicegraph-flink.labels" . | nindent 4 }}
+    app.kubernetes.io/component: upgrade-savepoint
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "servicegraph-flink.labels" . | nindent 8 }}
+        app.kubernetes.io/component: upgrade-savepoint
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "servicegraph-flink.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        {{- with .Values.podSecurityContext.runAsUser }}
+        runAsUser: {{ . }}
+        {{- end }}
+        {{- with .Values.podSecurityContext.runAsGroup }}
+        runAsGroup: {{ . }}
+        {{- end }}
+        seccompProfile:
+          type: RuntimeDefault
+        {{- with .Values.podSecurityContext.fsGroup }}
+        fsGroup: {{ . }}
+        fsGroupChangePolicy: OnRootMismatch
+        {{- end }}
+      containers:
+        - name: savepoint
+          image: {{ .Values.image.ref | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              exec python - <<'PY'
+              import json
+              import os
+              import re
+              import subprocess
+              import sys
+              import time
+              import urllib.error
+              import urllib.request
+              from pathlib import Path
+
+              rest_url = os.environ["FLINK_REST_URL"]
+              rest_address = os.environ["FLINK_REST_ADDRESS"]
+              job_id = os.environ["FLINK_JOB_ID"]
+              handoff = Path(os.environ["FLINK_SAVEPOINT_HANDOFF"])
+              latest_handoff = Path(os.environ["FLINK_LATEST_SAVEPOINT_HANDOFF"])
+              deadline = time.monotonic() + 480
+
+              while True:
+                  try:
+                      with urllib.request.urlopen(f"{rest_url}/jobs/{job_id}", timeout=3) as response:
+                          state = json.load(response).get("state", "UNKNOWN")
+                      break
+                  except urllib.error.HTTPError as error:
+                      if error.code == 404:
+                          state = "MISSING"
+                          break
+                      raise
+                  except (OSError, urllib.error.URLError):
+                      if time.monotonic() >= deadline:
+                          print(f"Flink REST endpoint {rest_url} did not become ready", file=sys.stderr)
+                          sys.exit(1)
+                      time.sleep(2)
+
+              if state in {"CANCELED", "FAILED", "FINISHED", "MISSING"}:
+                  candidate = handoff if handoff.is_file() and handoff.stat().st_size > 0 else latest_handoff
+                  if candidate.is_file() and candidate.stat().st_size > 0:
+                      savepoint_path = candidate.read_text().strip()
+                      handoff.parent.mkdir(parents=True, exist_ok=True)
+                      temporary = handoff.with_suffix(".tmp")
+                      temporary.write_text(savepoint_path + "\n")
+                      temporary.replace(handoff)
+                      print(
+                          f"Flink job {job_id} is {state}; reusing preserved savepoint "
+                          f"{savepoint_path}"
+                      )
+                      sys.exit(0)
+                  print(
+                      f"Flink job {job_id} is {state} and no preserved upgrade savepoint is available",
+                      file=sys.stderr,
+                  )
+                  sys.exit(1)
+
+              result = subprocess.run(
+                  [
+                      "/opt/flink/bin/flink",
+                      "stop",
+                      "-m",
+                      rest_address,
+                      "--savepointPath",
+                      "file:///flink-state/savepoints",
+                      job_id,
+                  ],
+                  check=False,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True,
+              )
+              print(result.stdout, end="")
+              if result.returncode != 0:
+                  sys.exit(result.returncode)
+
+              paths = re.findall(r"Savepoint completed\. Path:\s*(\S+)", result.stdout)
+              if not paths:
+                  print("Flink completed the stop command without returning a savepoint path", file=sys.stderr)
+                  sys.exit(1)
+
+              for destination in (handoff, latest_handoff):
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  temporary = destination.with_suffix(".tmp")
+                  temporary.write_text(paths[-1] + "\n")
+                  temporary.replace(destination)
+              print(f"Recorded upgrade savepoint {paths[-1]} in {handoff}")
+              PY
+          env:
+            - name: FLINK_REST_URL
+              value: http://{{ include "servicegraph-flink.restServiceName" . }}:8081
+            - name: FLINK_REST_ADDRESS
+              value: {{ printf "%s:8081" (include "servicegraph-flink.restServiceName" .) | quote }}
+            - name: FLINK_JOB_ID
+              value: {{ .Values.job.fixedJobId | lower | quote }}
+            - name: FLINK_SAVEPOINT_HANDOFF
+              value: {{ printf "/flink-state/upgrades/revision-%d.savepoint" (.Release.Revision | int) | quote }}
+            - name: FLINK_LATEST_SAVEPOINT_HANDOFF
+              value: /flink-state/upgrades/latest.savepoint
+          resources:
+            {{- toYaml .Values.resources.submitter | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: flink-state
+              mountPath: /flink-state
+            - name: flink-log
+              mountPath: /opt/flink/log
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: flink-state
+          persistentVolumeClaim:
+            claimName: {{ include "servicegraph-flink.claimName" . }}
+        - name: flink-log
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.tmpSizeLimit }}
+{{- end }}

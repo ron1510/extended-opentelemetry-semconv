@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "servicegraph-demo.fullname" . }}
+  labels:
+    {{- include "servicegraph-demo.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "servicegraph-demo.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "servicegraph-demo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: demo-traffic
+    spec:
+      serviceAccountName: {{ include "servicegraph-demo.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 10
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: demo
+          image: {{ include "servicegraph-demo.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: OTLP_HTTP_ENDPOINT
+              value: {{ required "collector.endpoint is required" .Values.collector.endpoint | quote }}
+            - name: DEMO_EMIT_INTERVAL_SECONDS
+              value: {{ .Values.traffic.emitIntervalSeconds | quote }}
+            - name: DEMO_TOPOLOGY_CHANGE_INTERVAL_SECONDS
+              value: {{ .Values.traffic.topologyChangeIntervalSeconds | quote }}
+            - name: DEMO_INITIAL_EDGES
+              value: {{ .Values.traffic.initialEdges | quote }}
+            - name: DEMO_MAX_ACTIVE_EDGES
+              value: {{ .Values.traffic.maxActiveEdges | quote }}
+            - name: DEMO_REQUESTS_PER_TICK
+              value: {{ .Values.traffic.requestsPerTick | quote }}
+            - name: DEMO_ERROR_RATE
+              value: {{ .Values.traffic.errorRate | quote }}
+            - name: DEMO_SERVICE_NAMESPACE
+              value: {{ .Values.traffic.serviceNamespace | quote }}
+            - name: DEMO_INSTANCE_ID
+              value: {{ .Values.traffic.instanceId | quote }}
+            - name: DEMO_RANDOM_SEED
+              value: {{ .Values.traffic.randomSeed | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

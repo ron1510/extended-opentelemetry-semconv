@@ -1,0 +1,12 @@
+OTLP entry point:
+  gRPC: {{ include "servicegraph-collector.fullname" . }}-router.{{ .Release.Namespace }}.svc:4317
+  HTTP:  http://{{ include "servicegraph-collector.fullname" . }}-router.{{ .Release.Namespace }}.svc:4318
+
+Two routers share a fixed hash ring containing these stateful backends:
+{{- $root := . }}
+{{- range $ordinal := until (int .Values.backend.replicaCount) }}
+  - {{ include "servicegraph-collector.fullname" $root }}-backend-{{ $ordinal }}.{{ include "servicegraph-collector.fullname" $root }}-backend-headless.{{ $root.Release.Namespace }}.svc:4317
+{{- end }}
+
+The Collector writes OTLP JSON metrics to:
+  {{ .Values.streamContract.topics.servicegraphMetrics }}

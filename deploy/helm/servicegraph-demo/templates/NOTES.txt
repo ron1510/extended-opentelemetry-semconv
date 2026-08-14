@@ -1,0 +1,5 @@
+Synthetic traffic is being sent to:
+  {{ .Values.collector.endpoint }}
+
+Inspect activity with:
+  kubectl logs deployment/{{ include "servicegraph-demo.fullname" . }} --namespace {{ .Release.Namespace }} --follow

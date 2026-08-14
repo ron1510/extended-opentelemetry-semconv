@@ -1,0 +1,560 @@
+{
+  "_meta": {
+    "schema_hash": "72b2cbf6fc2b8c1270b69fc9d5de7adc95f5f699335da702bbed6a9159ffdb69",
+    "schema_version": "1",
+    "upstream_registry_lock_sha256": "390b6d025d5bdf1d23b8f520f77c2495c1bdb941538c45ee55e4d1af7cc2f2b0"
+  },
+  "edge_collections": [
+    {
+      "collection": "built_from",
+      "from": [
+        "service"
+      ],
+      "semantic_type": "built_from",
+      "to": [
+        "vcs_repository"
+      ]
+    },
+    {
+      "collection": "calls",
+      "from": [
+        "service"
+      ],
+      "semantic_type": "calls",
+      "to": [
+        "service"
+      ]
+    },
+    {
+      "collection": "contains",
+      "from": [
+        "k8s_cluster",
+        "k8s_namespace",
+        "k8s_pod",
+        "service",
+        "service_namespace",
+        "vcs_repository"
+      ],
+      "semantic_type": "contains",
+      "to": [
+        "k8s_container",
+        "k8s_cronjob",
+        "k8s_daemonset",
+        "k8s_deployment",
+        "k8s_hpa",
+        "k8s_job",
+        "k8s_namespace",
+        "k8s_node",
+        "k8s_persistentvolume",
+        "k8s_persistentvolumeclaim",
+        "k8s_pod",
+        "k8s_replicaset",
+        "k8s_replicationcontroller",
+        "k8s_resourcequota",
+        "k8s_service",
+        "k8s_statefulset",
+        "service",
+        "service_instance",
+        "vcs_ref"
+      ]
+    },
+    {
+      "collection": "exposes",
+      "from": [
+        "service"
+      ],
+      "semantic_type": "exposes",
+      "to": [
+        "app_endpoint"
+      ]
+    },
+    {
+      "collection": "instrumented_by",
+      "from": [
+        "service"
+      ],
+      "semantic_type": "instrumented_by",
+      "to": [
+        "telemetry_distro",
+        "telemetry_sdk"
+      ]
+    },
+    {
+      "collection": "publishes_to",
+      "from": [
+        "service"
+      ],
+      "semantic_type": "publishes_to",
+      "to": [
+        "service"
+      ]
+    },
+    {
+      "collection": "queries",
+      "from": [
+        "service"
+      ],
+      "semantic_type": "queries",
+      "to": [
+        "service"
+      ]
+    },
+    {
+      "collection": "runs",
+      "from": [
+        "container_runtime",
+        "k8s_container",
+        "k8s_node",
+        "k8s_pod"
+      ],
+      "semantic_type": "runs",
+      "to": [
+        "k8s_container",
+        "k8s_pod",
+        "process",
+        "service",
+        "service_instance"
+      ]
+    },
+    {
+      "collection": "uses",
+      "from": [
+        "process"
+      ],
+      "semantic_type": "uses",
+      "to": [
+        "process_executable",
+        "process_runtime"
+      ]
+    }
+  ],
+  "graph_name": "servicegraph",
+  "property_aliases": {
+    "attributes": {
+      "container.runtime.description": "container_runtime_description",
+      "container.runtime.name": "container_runtime_name",
+      "container.runtime.version": "container_runtime_version",
+      "http.request.method": "http_request_method",
+      "http.route": "http_route",
+      "k8s.cluster.name": "k8s_cluster_name",
+      "k8s.cluster.uid": "k8s_cluster_uid",
+      "k8s.container.name": "k8s_container_name",
+      "k8s.container.restart_count": "k8s_container_restart_count",
+      "k8s.container.status.last_terminated_reason": "k8s_container_status_last_terminated_reason",
+      "k8s.cronjob.name": "k8s_cronjob_name",
+      "k8s.cronjob.uid": "k8s_cronjob_uid",
+      "k8s.daemonset.name": "k8s_daemonset_name",
+      "k8s.daemonset.uid": "k8s_daemonset_uid",
+      "k8s.deployment.name": "k8s_deployment_name",
+      "k8s.deployment.uid": "k8s_deployment_uid",
+      "k8s.hpa.name": "k8s_hpa_name",
+      "k8s.hpa.scaletargetref.api_version": "k8s_hpa_scaletargetref_api_version",
+      "k8s.hpa.scaletargetref.kind": "k8s_hpa_scaletargetref_kind",
+      "k8s.hpa.scaletargetref.name": "k8s_hpa_scaletargetref_name",
+      "k8s.hpa.uid": "k8s_hpa_uid",
+      "k8s.job.name": "k8s_job_name",
+      "k8s.job.uid": "k8s_job_uid",
+      "k8s.namespace.name": "k8s_namespace_name",
+      "k8s.node.name": "k8s_node_name",
+      "k8s.node.uid": "k8s_node_uid",
+      "k8s.persistentvolume.name": "k8s_persistentvolume_name",
+      "k8s.persistentvolume.reclaim_policy": "k8s_persistentvolume_reclaim_policy",
+      "k8s.persistentvolume.uid": "k8s_persistentvolume_uid",
+      "k8s.persistentvolumeclaim.name": "k8s_persistentvolumeclaim_name",
+      "k8s.persistentvolumeclaim.uid": "k8s_persistentvolumeclaim_uid",
+      "k8s.pod.hostname": "k8s_pod_hostname",
+      "k8s.pod.ip": "k8s_pod_ip",
+      "k8s.pod.name": "k8s_pod_name",
+      "k8s.pod.start_time": "k8s_pod_start_time",
+      "k8s.pod.uid": "k8s_pod_uid",
+      "k8s.replicaset.name": "k8s_replicaset_name",
+      "k8s.replicaset.uid": "k8s_replicaset_uid",
+      "k8s.replicationcontroller.name": "k8s_replicationcontroller_name",
+      "k8s.replicationcontroller.uid": "k8s_replicationcontroller_uid",
+      "k8s.resourcequota.name": "k8s_resourcequota_name",
+      "k8s.resourcequota.uid": "k8s_resourcequota_uid",
+      "k8s.service.name": "k8s_service_name",
+      "k8s.service.publish_not_ready_addresses": "k8s_service_publish_not_ready_addresses",
+      "k8s.service.traffic_distribution": "k8s_service_traffic_distribution",
+      "k8s.service.type": "k8s_service_type",
+      "k8s.service.uid": "k8s_service_uid",
+      "k8s.statefulset.name": "k8s_statefulset_name",
+      "k8s.statefulset.uid": "k8s_statefulset_uid",
+      "k8s.storageclass.name": "k8s_storageclass_name",
+      "process.args_count": "process_args_count",
+      "process.command": "process_command",
+      "process.command_line": "process_command_line",
+      "process.creation.time": "process_creation_time",
+      "process.executable.build_id.gnu": "process_executable_build_id_gnu",
+      "process.executable.build_id.go": "process_executable_build_id_go",
+      "process.executable.build_id.htlhash": "process_executable_build_id_htlhash",
+      "process.executable.name": "process_executable_name",
+      "process.executable.path": "process_executable_path",
+      "process.interactive": "process_interactive",
+      "process.linux.cgroup": "process_linux_cgroup",
+      "process.owner": "process_owner",
+      "process.parent_pid": "process_parent_pid",
+      "process.pid": "process_pid",
+      "process.runtime.description": "process_runtime_description",
+      "process.runtime.name": "process_runtime_name",
+      "process.runtime.version": "process_runtime_version",
+      "process.title": "process_title",
+      "process.working_directory": "process_working_directory",
+      "service.criticality": "service_criticality",
+      "service.instance.id": "service_instance_id",
+      "service.name": "service_name",
+      "service.namespace": "service_namespace",
+      "service.version": "service_version",
+      "telemetry.distro.name": "telemetry_distro_name",
+      "telemetry.distro.version": "telemetry_distro_version",
+      "telemetry.sdk.language": "telemetry_sdk_language",
+      "telemetry.sdk.name": "telemetry_sdk_name",
+      "telemetry.sdk.version": "telemetry_sdk_version",
+      "vcs.ref.head.name": "vcs_ref_head_name",
+      "vcs.ref.head.revision": "vcs_ref_head_revision",
+      "vcs.ref.type": "vcs_ref_type",
+      "vcs.repository.name": "vcs_repository_name",
+      "vcs.repository.url.full": "vcs_repository_url_full"
+    },
+    "metrics": {
+      "service_graph.request.failed.total": "service_graph_request_failed_total",
+      "service_graph.request.total": "service_graph_request_total"
+    }
+  },
+  "reserved_properties": [
+    "_from",
+    "_id",
+    "_key",
+    "_rev",
+    "_to",
+    "attributes",
+    "element_id",
+    "emitted_at_unix_ms",
+    "event_id",
+    "metrics",
+    "observed_at_unix_nano",
+    "payload_hash",
+    "schema_version",
+    "semantic_type"
+  ],
+  "vertex_collections": [
+    {
+      "collection": "app_endpoint",
+      "identifying_properties": [
+        {
+          "attribute": "service.name",
+          "property": "service_name"
+        },
+        {
+          "attribute": "service.namespace",
+          "property": "service_namespace"
+        },
+        {
+          "attribute": "http.request.method",
+          "property": "http_request_method"
+        },
+        {
+          "attribute": "http.route",
+          "property": "http_route"
+        }
+      ],
+      "semantic_type": "app.endpoint"
+    },
+    {
+      "collection": "container_runtime",
+      "identifying_properties": [
+        {
+          "attribute": "container.runtime.name",
+          "property": "container_runtime_name"
+        },
+        {
+          "attribute": "container.runtime.version",
+          "property": "container_runtime_version"
+        }
+      ],
+      "semantic_type": "container.runtime"
+    },
+    {
+      "collection": "k8s_cluster",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.cluster.uid",
+          "property": "k8s_cluster_uid"
+        }
+      ],
+      "semantic_type": "k8s.cluster"
+    },
+    {
+      "collection": "k8s_container",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.container.name",
+          "property": "k8s_container_name"
+        }
+      ],
+      "semantic_type": "k8s.container"
+    },
+    {
+      "collection": "k8s_cronjob",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.cronjob.uid",
+          "property": "k8s_cronjob_uid"
+        }
+      ],
+      "semantic_type": "k8s.cronjob"
+    },
+    {
+      "collection": "k8s_daemonset",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.daemonset.uid",
+          "property": "k8s_daemonset_uid"
+        }
+      ],
+      "semantic_type": "k8s.daemonset"
+    },
+    {
+      "collection": "k8s_deployment",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.deployment.uid",
+          "property": "k8s_deployment_uid"
+        }
+      ],
+      "semantic_type": "k8s.deployment"
+    },
+    {
+      "collection": "k8s_hpa",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.hpa.uid",
+          "property": "k8s_hpa_uid"
+        }
+      ],
+      "semantic_type": "k8s.hpa"
+    },
+    {
+      "collection": "k8s_job",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.job.uid",
+          "property": "k8s_job_uid"
+        }
+      ],
+      "semantic_type": "k8s.job"
+    },
+    {
+      "collection": "k8s_namespace",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.namespace.name",
+          "property": "k8s_namespace_name"
+        }
+      ],
+      "semantic_type": "k8s.namespace"
+    },
+    {
+      "collection": "k8s_node",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.node.uid",
+          "property": "k8s_node_uid"
+        }
+      ],
+      "semantic_type": "k8s.node"
+    },
+    {
+      "collection": "k8s_persistentvolume",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.persistentvolume.uid",
+          "property": "k8s_persistentvolume_uid"
+        }
+      ],
+      "semantic_type": "k8s.persistentvolume"
+    },
+    {
+      "collection": "k8s_persistentvolumeclaim",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.persistentvolumeclaim.uid",
+          "property": "k8s_persistentvolumeclaim_uid"
+        }
+      ],
+      "semantic_type": "k8s.persistentvolumeclaim"
+    },
+    {
+      "collection": "k8s_pod",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.pod.uid",
+          "property": "k8s_pod_uid"
+        }
+      ],
+      "semantic_type": "k8s.pod"
+    },
+    {
+      "collection": "k8s_replicaset",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.replicaset.uid",
+          "property": "k8s_replicaset_uid"
+        }
+      ],
+      "semantic_type": "k8s.replicaset"
+    },
+    {
+      "collection": "k8s_replicationcontroller",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.replicationcontroller.uid",
+          "property": "k8s_replicationcontroller_uid"
+        }
+      ],
+      "semantic_type": "k8s.replicationcontroller"
+    },
+    {
+      "collection": "k8s_resourcequota",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.resourcequota.uid",
+          "property": "k8s_resourcequota_uid"
+        }
+      ],
+      "semantic_type": "k8s.resourcequota"
+    },
+    {
+      "collection": "k8s_service",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.service.uid",
+          "property": "k8s_service_uid"
+        }
+      ],
+      "semantic_type": "k8s.service"
+    },
+    {
+      "collection": "k8s_statefulset",
+      "identifying_properties": [
+        {
+          "attribute": "k8s.statefulset.uid",
+          "property": "k8s_statefulset_uid"
+        }
+      ],
+      "semantic_type": "k8s.statefulset"
+    },
+    {
+      "collection": "process",
+      "identifying_properties": [
+        {
+          "attribute": "process.pid",
+          "property": "process_pid"
+        },
+        {
+          "attribute": "process.creation.time",
+          "property": "process_creation_time"
+        }
+      ],
+      "semantic_type": "process"
+    },
+    {
+      "collection": "process_executable",
+      "identifying_properties": [
+        {
+          "attribute": "process.executable.build_id.htlhash",
+          "property": "process_executable_build_id_htlhash"
+        }
+      ],
+      "semantic_type": "process.executable"
+    },
+    {
+      "collection": "process_runtime",
+      "identifying_properties": [
+        {
+          "attribute": "process.runtime.name",
+          "property": "process_runtime_name"
+        },
+        {
+          "attribute": "process.runtime.version",
+          "property": "process_runtime_version"
+        }
+      ],
+      "semantic_type": "process.runtime"
+    },
+    {
+      "collection": "service",
+      "identifying_properties": [
+        {
+          "attribute": "service.name",
+          "property": "service_name"
+        }
+      ],
+      "semantic_type": "service"
+    },
+    {
+      "collection": "service_instance",
+      "identifying_properties": [
+        {
+          "attribute": "service.instance.id",
+          "property": "service_instance_id"
+        }
+      ],
+      "semantic_type": "service.instance"
+    },
+    {
+      "collection": "service_namespace",
+      "identifying_properties": [
+        {
+          "attribute": "service.namespace",
+          "property": "service_namespace"
+        }
+      ],
+      "semantic_type": "service.namespace"
+    },
+    {
+      "collection": "telemetry_distro",
+      "identifying_properties": [
+        {
+          "attribute": "telemetry.distro.name",
+          "property": "telemetry_distro_name"
+        }
+      ],
+      "semantic_type": "telemetry.distro"
+    },
+    {
+      "collection": "telemetry_sdk",
+      "identifying_properties": [
+        {
+          "attribute": "telemetry.sdk.name",
+          "property": "telemetry_sdk_name"
+        },
+        {
+          "attribute": "telemetry.sdk.language",
+          "property": "telemetry_sdk_language"
+        }
+      ],
+      "semantic_type": "telemetry.sdk"
+    },
+    {
+      "collection": "vcs_ref",
+      "identifying_properties": [
+        {
+          "attribute": "vcs.ref.head.revision",
+          "property": "vcs_ref_head_revision"
+        }
+      ],
+      "semantic_type": "vcs.ref"
+    },
+    {
+      "collection": "vcs_repository",
+      "identifying_properties": [
+        {
+          "attribute": "vcs.repository.url.full",
+          "property": "vcs_repository_url_full"
+        }
+      ],
+      "semantic_type": "vcs.repository"
+    }
+  ]
+}
