@@ -103,7 +103,7 @@ def test_lifecycle_operator_persists_contribution_and_registers_both_timers() ->
     assert timers.registered_processing == [15_000]
     assert state.serialized is not None
     persisted = GraphElementState.model_validate_json(state.serialized)
-    assert persisted.element_id == contribution.element_id
+    assert persisted.element_id == contribution.element.id
     assert set(persisted.contributors) == {contribution.contributor_id}
 
 

@@ -206,18 +206,10 @@ def test_event_contract_round_trips_as_discriminated_union() -> None:
     assert restored.element_id == "k8s.pod:pod-1"
 
 
-def test_contribution_validates_element_and_metric_identity() -> None:
+def test_contribution_validates_metric_identity() -> None:
     node = GraphNode(id="service:a", type="service")
-    with pytest.raises(ValidationError, match="element_id must match"):
-        GraphContribution(
-            element_id="service:b",
-            contributor_id="a",
-            observed_at_unix_nano=1,
-            element=node,
-        )
     with pytest.raises(ValidationError, match="node contributions"):
         GraphContribution(
-            element_id=node.id,
             contributor_id="a",
             observed_at_unix_nano=1,
             element=node,
@@ -226,7 +218,6 @@ def test_contribution_validates_element_and_metric_identity() -> None:
     edge = _edge()
     with pytest.raises(ValidationError):
         GraphContribution(
-            element_id=edge.id,
             contributor_id="a",
             observed_at_unix_nano=1,
             element=edge,
@@ -247,7 +238,6 @@ def test_contribution_requires_positive_ttl() -> None:
 def test_same_element_id_rejects_incompatible_semantic_identity() -> None:
     active = _apply(None, _node_contribution("a", 10, {"zone": "eu"}))
     incompatible = GraphContribution(
-        element_id="k8s.pod:pod-1",
         contributor_id="b",
         observed_at_unix_nano=20,
         element=GraphNode(id="k8s.pod:pod-1", type="service"),
@@ -276,7 +266,6 @@ def _apply(
 def _node_contribution(contributor: str, observed_at: int, attributes: dict[str, object]) -> GraphContribution:
     node = GraphNode(id="k8s.pod:pod-1", type="k8s.pod", attributes=attributes)
     return GraphContribution(
-        element_id=node.id,
         contributor_id=contributor,
         observed_at_unix_nano=observed_at,
         element=node,
@@ -295,7 +284,6 @@ def _edge_contribution(
     if failures is not None:
         deltas[GRAPH_REQUEST_FAILED_TOTAL] = failures
     return GraphContribution(
-        element_id=edge.id,
         contributor_id=contributor,
         observed_at_unix_nano=observed_at,
         element=edge,

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from opentelemetry.proto.common.v1.common_pb2 import AnyValue
 from pydantic import ValidationError
 
 from otel_servicegraph_diff.engine.elements import (
@@ -24,37 +23,55 @@ from otel_servicegraph_diff.ingest.metrics import (
     SERVICE_GRAPH_REQUEST_FAILED_TOTAL,
     SERVICE_GRAPH_REQUEST_TOTAL,
     IngestRejection,
+    MetricPoint,
+    iter_otlp_json_metric_points,
 )
-from otel_servicegraph_diff.ingest.otlp import any_value_to_python
 from tools.semconv_codegen.registry.model import AttributeDefinition, EnumAttributeType
 from tools.semconv_codegen.registry.validation import load_model_registry
 
 CODEGEN_ROOT = Path(__file__).resolve().parents[3] / "tools" / "semconv_codegen"
 
 
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        (AnyValue(string_value="checkout"), "checkout"),
-        (AnyValue(bool_value=True), True),
-        (AnyValue(int_value=3), 3),
-        (AnyValue(double_value=1.5), 1.5),
-        (AnyValue(bytes_value=b"otel"), b"otel"),
-        (AnyValue(), None),
-    ],
-)
-def test_any_value_to_python_converts_scalar_values(value: AnyValue, expected: object) -> None:
-    assert any_value_to_python(value) == expected
+def test_metric_parser_retains_only_scalar_attributes() -> None:
+    point = _point(
+        attributes={
+            "string": "checkout",
+            "boolean": True,
+            "integer": 3,
+            "double": 1.5,
+            "array": ["ignored"],
+        }
+    )
+    attributes = cast(list[dict[str, object]], point["attributes"])
+    attributes.extend(
+        [
+            {"key": "bytes", "value": {"bytesValue": "b3RlbA=="}},
+            {
+                "key": "mapping",
+                "value": {
+                    "kvlistValue": {
+                        "values": [{"key": "name", "value": {"stringValue": "ignored"}}],
+                    }
+                },
+            },
+            {"key": "empty", "value": {}},
+        ]
+    )
 
+    results = tuple(
+        iter_otlp_json_metric_points(
+            _payload(_sum_metric(data_points=[point])),
+        )
+    )
 
-def test_any_value_to_python_converts_nested_values() -> None:
-    array = AnyValue()
-    array.array_value.values.extend([AnyValue(string_value="a"), AnyValue(int_value=2)])
-    mapping = AnyValue()
-    mapping.kvlist_value.values.add(key="name", value=AnyValue(string_value="checkout"))
-
-    assert any_value_to_python(array) == ["a", 2]
-    assert any_value_to_python(mapping) == {"name": "checkout"}
+    assert len(results) == 1
+    assert isinstance(results[0], MetricPoint)
+    assert results[0].attributes == {
+        "string": "checkout",
+        "boolean": True,
+        "integer": 3,
+        "double": 1.5,
+    }
 
 
 def test_otlp_json_parser_emits_direct_contributions_and_ignores_non_scalars() -> None:
@@ -77,7 +94,7 @@ def test_otlp_json_parser_emits_direct_contributions_and_ignores_non_scalars() -
     contributions = _valid_contributions(iter_otlp_json_contributions(payload))
 
     assert len(contributions) == 3
-    assert len({item.element_id for item in contributions}) == len(contributions)
+    assert len({item.element.id for item in contributions}) == len(contributions)
     dependency = _dependency(contributions)
     assert dependency.metric_deltas == {GRAPH_REQUEST_TOTAL: 3}
     assert all("custom.array" not in item.element.attributes for item in contributions)
@@ -302,8 +319,8 @@ def test_self_call_deduplicates_shared_elements() -> None:
         }
     )
 
-    assert len({item.element_id for item in contributions}) == len(contributions)
-    service = next(item.element for item in contributions if item.element_id == "service:checkout")
+    assert len({item.element.id for item in contributions}) == len(contributions)
+    service = next(item.element for item in contributions if item.element.id == "service:checkout")
     assert service.attributes == {
         "service.name": "checkout",
         "service.version": "1.0",

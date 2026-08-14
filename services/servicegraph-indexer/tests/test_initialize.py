@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from unittest.mock import Mock
 
 import pytest
 from pydantic import SecretStr
 
+import servicegraph_indexer.initialize as initialize_module
 from servicegraph_indexer.initialize import (
     ArangoSettings,
     CollectionBoundary,
     GraphBoundary,
     TopologyInitializationError,
+    arango_settings_from_env,
     ensure_topology,
     wait_for_database,
 )
@@ -113,6 +116,30 @@ class FakeDatabase:
 
     def graph(self, name: str) -> GraphBoundary:
         return self.graphs[name]
+
+
+def test_initializer_settings_are_cached_retry_failures_and_main_uses_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    arango_settings_from_env.cache_clear()
+    try:
+        monkeypatch.setenv("SERVICEGRAPH_INDEXER_ARANGO_URLS", "invalid")
+        monkeypatch.setenv("SERVICEGRAPH_INDEXER_ARANGO_PASSWORD", "secret")
+        with pytest.raises(ValueError, match="http or https"):
+            arango_settings_from_env()
+
+        monkeypatch.setenv("SERVICEGRAPH_INDEXER_ARANGO_URLS", "http://one:8529")
+        first = arango_settings_from_env()
+        monkeypatch.setenv("SERVICEGRAPH_INDEXER_ARANGO_URLS", "http://two:8529")
+        assert arango_settings_from_env() is first
+        assert first.urls == ("http://one:8529",)
+
+        initializer = Mock(return_value="unchanged")
+        monkeypatch.setattr(initialize_module, "initialize", initializer)
+        assert initialize_module.main() == 0
+        initializer.assert_called_once_with(first)
+    finally:
+        arango_settings_from_env.cache_clear()
 
 
 def test_initializer_creates_then_is_an_exact_noop() -> None:

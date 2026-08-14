@@ -4,16 +4,34 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
+from functools import cache, cached_property
 from importlib.resources import files
-from typing import cast
+from types import MappingProxyType
+from typing import Annotated, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PlainSerializer
 
 SCHEMA_RESOURCE = "metadata/arangodb-graph-schema.json"
 
 
 class SchemaError(RuntimeError):
     """Raised when the generated graph schema is invalid."""
+
+
+def _freeze_string_mapping(value: Mapping[str, str]) -> Mapping[str, str]:
+    return MappingProxyType(dict(value))
+
+
+def _serialize_string_mapping(value: Mapping[str, str]) -> dict[str, str]:
+    return dict(value)
+
+
+type FrozenStringMapping = Annotated[
+    Mapping[str, str],
+    AfterValidator(_freeze_string_mapping),
+    PlainSerializer(_serialize_string_mapping),
+]
 
 
 class IdentifyingProperty(BaseModel):
@@ -43,8 +61,8 @@ class EdgeCollection(BaseModel):
 class PropertyAliases(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    attributes: dict[str, str]
-    metrics: dict[str, str]
+    attributes: FrozenStringMapping
+    metrics: FrozenStringMapping
 
 
 class SchemaMetadata(BaseModel):
@@ -65,15 +83,16 @@ class GraphSchema(BaseModel):
     property_aliases: PropertyAliases
     reserved_properties: tuple[str, ...]
 
-    @property
-    def vertices_by_type(self) -> dict[str, VertexCollection]:
-        return {item.semantic_type: item for item in self.vertex_collections}
+    @cached_property
+    def vertices_by_type(self) -> Mapping[str, VertexCollection]:
+        return MappingProxyType({item.semantic_type: item for item in self.vertex_collections})
 
-    @property
-    def edges_by_type(self) -> dict[str, EdgeCollection]:
-        return {item.semantic_type: item for item in self.edge_collections}
+    @cached_property
+    def edges_by_type(self) -> Mapping[str, EdgeCollection]:
+        return MappingProxyType({item.semantic_type: item for item in self.edge_collections})
 
 
+@cache
 def load_graph_schema() -> GraphSchema:
     resource = files("servicegraph_indexer").joinpath(SCHEMA_RESOURCE)
     decoded = json.loads(resource.read_text(encoding="utf-8"))

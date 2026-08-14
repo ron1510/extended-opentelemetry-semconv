@@ -12,6 +12,13 @@ from extended_otel_semconv.errors import (
     UnknownSemanticTypeError,
 )
 from extended_otel_semconv.generated import EDGE_MODELS, ENTITY_MODELS
+from extended_otel_semconv.relationships import service_graph_relationships
+
+
+def test_relationship_metadata_is_loaded_once_per_process() -> None:
+    first = service_graph_relationships()
+
+    assert service_graph_relationships() is first
 
 
 def test_generated_registries_cover_entities_and_relationships() -> None:

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-template_dir=/etc/servicegraph-gremlin
-runtime_dir=/opt/gremlin-server/runtime-conf
+readonly template_dir=/etc/servicegraph-gremlin
+readonly runtime_dir=/opt/gremlin-server/runtime-conf
 
 envsubst < "${template_dir}/arangodb.yaml" > "${runtime_dir}/arangodb.yaml"
 envsubst < "${template_dir}/gremlin-server.yaml" > "${runtime_dir}/gremlin-server.yaml"

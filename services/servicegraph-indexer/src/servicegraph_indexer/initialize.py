@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
+from functools import cache
 from typing import Protocol, cast
 
 from arango.client import ArangoClient
@@ -49,6 +50,11 @@ class ArangoSettings(BaseSettings):
         if any(not url.startswith(("http://", "https://")) for url in self.urls):
             raise ValueError("ArangoDB URLs must use http or https")
         return self
+
+
+@cache
+def arango_settings_from_env() -> ArangoSettings:
+    return ArangoSettings()  # pyright: ignore[reportCallIssue]
 
 
 class CollectionBoundary(Protocol):
@@ -203,7 +209,7 @@ def initialize(settings: ArangoSettings, database: DatabaseBoundary | None = Non
 
 def main() -> int:
     try:
-        settings = ArangoSettings()  # pyright: ignore[reportCallIssue]
+        settings = arango_settings_from_env()
         result = initialize(settings)
     except Exception as error:
         print(f"service graph topology initialization failed: {error}", file=sys.stderr)

@@ -285,7 +285,7 @@ class _ObservationTimestampAssigner(TimestampAssigner):
 
 
 def _element_key(item: GraphContribution) -> str:
-    return item.element_id
+    return item.element.id
 
 
 def _event_row(event: GraphElementEvent) -> Row:

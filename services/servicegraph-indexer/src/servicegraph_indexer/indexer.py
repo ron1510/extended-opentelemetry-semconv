@@ -13,6 +13,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import cache
 from threading import Event
 from types import FrameType
 from typing import Any, Protocol, cast
@@ -66,6 +67,11 @@ class IndexerSettings(ArangoSettings):
         elif any(value is not None for value in security_values):
             raise ValueError("Kafka authentication fields require SASL_PLAINTEXT or SASL_SSL")
         return self
+
+
+@cache
+def indexer_settings_from_env() -> IndexerSettings:
+    return IndexerSettings()  # pyright: ignore[reportCallIssue]
 
 
 class KafkaRecord(Protocol):
@@ -313,7 +319,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     try:
-        run_indexer(IndexerSettings(), stop=stop)  # pyright: ignore[reportCallIssue]
+        run_indexer(indexer_settings_from_env(), stop=stop)
     except Exception:
         LOGGER.exception("Service graph indexing failed")
         return 1

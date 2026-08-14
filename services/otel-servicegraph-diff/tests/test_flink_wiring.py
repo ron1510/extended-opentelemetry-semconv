@@ -250,7 +250,7 @@ def test_payload_parser_initializes_metric_and_yields_direct_contributions() -> 
 
     metrics.counter.assert_called_once_with("rejected_inputs")
     assert len(contributions) == 3
-    assert len({item.element_id for item in contributions}) == 3
+    assert len({item.element.id for item in contributions}) == 3
     counter.inc.assert_not_called()
 
 
@@ -320,7 +320,6 @@ def test_small_stream_adapters_preserve_identity_and_time() -> None:
     assert flink_job._timer_millis(1_000_000_001) == 1_001
 
     contribution = GraphContribution(
-        element_id="service:frontend",
         contributor_id="contributor-a",
         observed_at_unix_nano=1_234_567_890,
         element=GraphNode(id="service:frontend", type="service"),
@@ -333,7 +332,7 @@ def test_small_stream_adapters_preserve_identity_and_time() -> None:
         emitted_at_unix_ms=10,
     )
     assert result.event is not None
-    assert flink_job._element_key(contribution) == contribution.element_id
+    assert flink_job._element_key(contribution) == contribution.element.id
     row = flink_job._event_row(result.event)
     assert row[0] == result.event.element_id
     assert '"operation":"upsert"' in row[1]
@@ -382,7 +381,7 @@ def _parsed_contribution() -> GraphContribution:
         1,
         1_234_567_890,
     )
-    return next(item for item in contributions if item.element_id == "service:frontend")
+    return next(item for item in contributions if item.element.id == "service:frontend")
 
 
 def _valid_metrics_payload() -> str:

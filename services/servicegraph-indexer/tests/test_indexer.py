@@ -20,6 +20,7 @@ from servicegraph_indexer.indexer import (
     create_consumer,
     element_key,
     event_to_document,
+    indexer_settings_from_env,
     project_poll,
 )
 from servicegraph_indexer.schema import load_graph_schema
@@ -46,6 +47,26 @@ class FakeWriter:
         if self.fail:
             raise RuntimeError("database failed")
         self.deletions.append((collection, keys))
+
+
+def test_indexer_settings_are_cached_and_main_uses_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    indexer_settings_from_env.cache_clear()
+    try:
+        monkeypatch.setenv("SERVICEGRAPH_INDEXER_ARANGO_PASSWORD", "secret")
+        monkeypatch.setenv("SERVICEGRAPH_INDEXER_KAFKA_BOOTSTRAP_SERVERS", "one:9092")
+        first = indexer_settings_from_env()
+        monkeypatch.setenv("SERVICEGRAPH_INDEXER_KAFKA_BOOTSTRAP_SERVERS", "two:9092")
+
+        assert indexer_settings_from_env() is first
+        assert first.kafka_bootstrap_servers == "one:9092"
+
+        runner = Mock()
+        monkeypatch.setattr(indexer_module, "run_indexer", runner)
+        monkeypatch.setattr(indexer_module.signal, "signal", Mock())
+        assert indexer_module.main() == 0
+        assert runner.call_args.args == (first,)
+    finally:
+        indexer_settings_from_env.cache_clear()
 
 
 def _upsert(*, kind: str = "node", element_id: str = "service:checkout", event_id: str = "event-1") -> bytes:

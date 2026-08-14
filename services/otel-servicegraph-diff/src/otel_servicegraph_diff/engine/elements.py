@@ -76,16 +76,13 @@ type GraphElementEvent = Annotated[
 
 
 class GraphContribution(FrozenModel):
-    element_id: NonEmptyString
     contributor_id: NonEmptyString
     observed_at_unix_nano: UnixNano
     element: GraphElement
     metric_deltas: dict[str, MetricDelta] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_element(self) -> GraphContribution:
-        if self.element.id != self.element_id:
-            raise ValueError("element_id must match element.id")
+    def validate_metric_deltas(self) -> GraphContribution:
         if isinstance(self.element, GraphNode) and self.metric_deltas:
             raise ValueError("node contributions cannot contain metric deltas")
         return self
@@ -121,6 +118,7 @@ def apply_contribution(
 ) -> GraphElementLifecycleResult:
     if ttl_seconds <= 0:
         raise ValueError("contributor TTL must be greater than zero")
+    element_id = contribution.element.id
     existing = previous.contributors.get(contribution.contributor_id) if previous is not None else None
     if existing is not None and contribution.observed_at_unix_nano < existing.observed_at_unix_nano:
         return GraphElementLifecycleResult(state=previous)
@@ -142,7 +140,7 @@ def apply_contribution(
         metrics[name] = metrics.get(name, 0) + delta
     return _updated_state(
         previous,
-        contribution.element_id,
+        element_id,
         contributors,
         metrics,
         contribution.observed_at_unix_nano,

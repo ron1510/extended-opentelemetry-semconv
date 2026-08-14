@@ -11,7 +11,24 @@ from otel_servicegraph_diff.config import (
     KafkaSaslMechanism,
     KafkaSecurityProtocol,
     _escape_jaas_value,
+    graph_engine_config_from_env,
 )
+
+
+def test_environment_config_is_one_snapshot_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    graph_engine_config_from_env.cache_clear()
+    try:
+        monkeypatch.setenv("FLINK_PARALLELISM", "2")
+        first = graph_engine_config_from_env()
+        monkeypatch.setenv("FLINK_PARALLELISM", "4")
+
+        assert graph_engine_config_from_env() is first
+        assert first.parallelism == 2
+
+        graph_engine_config_from_env.cache_clear()
+        assert graph_engine_config_from_env().parallelism == 4
+    finally:
+        graph_engine_config_from_env.cache_clear()
 
 
 def test_config_rejects_state_ttl_that_can_preempt_business_expiry() -> None:

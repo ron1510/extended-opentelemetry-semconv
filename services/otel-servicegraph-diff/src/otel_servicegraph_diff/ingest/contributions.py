@@ -6,7 +6,6 @@ import hashlib
 import json
 import math
 from collections.abc import Iterator, Mapping, Sequence
-from functools import cache
 from typing import Literal
 
 from pydantic import ValidationError
@@ -86,23 +85,17 @@ def contributions_from_servicegraph_datapoint(
         connection_type,
         client_entities,
         server_entities,
-        _relationships(),
+        service_graph_relationships(),
     )
     return tuple(
         GraphContribution(
-            element_id=element_id,
             contributor_id=contributor_id,
             observed_at_unix_nano=observed_at_unix_nano,
             element=element,
             metric_deltas=metric_deltas,
         )
-        for element_id, (element, metric_deltas) in sorted(elements.items())
+        for _, (element, metric_deltas) in sorted(elements.items())
     )
-
-
-@cache
-def _relationships() -> tuple[RelationshipDefinition, ...]:
-    return service_graph_relationships()
 
 
 def _entities_from_side(

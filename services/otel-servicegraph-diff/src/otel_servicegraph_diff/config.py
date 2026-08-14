@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from functools import cache
 from typing import Annotated
 
 from pydantic import Field, SecretStr, StringConstraints, model_validator
@@ -121,5 +122,6 @@ def _escape_jaas_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+@cache
 def graph_engine_config_from_env() -> GraphEngineConfig:
     return GraphEngineConfig()

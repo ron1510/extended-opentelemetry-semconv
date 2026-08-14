@@ -5,6 +5,7 @@ import random
 import time
 import urllib.request
 from dataclasses import dataclass
+from functools import cache
 from hashlib import sha256
 from typing import Final
 
@@ -70,27 +71,6 @@ class Config:
     instance_id: str
     random_seed: int | None
 
-    @classmethod
-    def from_env(cls) -> Config:
-        seed_value = os.getenv("DEMO_RANDOM_SEED", "").strip()
-        config = cls(
-            endpoint=os.getenv(
-                "OTLP_HTTP_ENDPOINT",
-                "http://servicegraph-collector-router:4318/v1/traces",
-            ),
-            emit_interval_seconds=float(os.getenv("DEMO_EMIT_INTERVAL_SECONDS", "2")),
-            topology_change_interval_seconds=float(os.getenv("DEMO_TOPOLOGY_CHANGE_INTERVAL_SECONDS", "20")),
-            initial_edges=int(os.getenv("DEMO_INITIAL_EDGES", "10")),
-            max_active_edges=int(os.getenv("DEMO_MAX_ACTIVE_EDGES", "18")),
-            requests_per_tick=int(os.getenv("DEMO_REQUESTS_PER_TICK", "8")),
-            error_rate=float(os.getenv("DEMO_ERROR_RATE", "0.08")),
-            namespace=os.getenv("DEMO_SERVICE_NAMESPACE", "shop"),
-            instance_id=os.getenv("DEMO_INSTANCE_ID", "live-demo"),
-            random_seed=int(seed_value) if seed_value else None,
-        )
-        config.validate()
-        return config
-
     def validate(self) -> None:
         if not self.endpoint.startswith(("http://", "https://")):
             raise ValueError("OTLP_HTTP_ENDPOINT must use http:// or https://")
@@ -102,6 +82,28 @@ class Config:
             raise ValueError("DEMO_REQUESTS_PER_TICK must be positive")
         if not 0 <= self.error_rate <= 1:
             raise ValueError("DEMO_ERROR_RATE must be between 0 and 1")
+
+
+@cache
+def demo_config_from_env() -> Config:
+    seed_value = os.getenv("DEMO_RANDOM_SEED", "").strip()
+    config = Config(
+        endpoint=os.getenv(
+            "OTLP_HTTP_ENDPOINT",
+            "http://servicegraph-collector-router:4318/v1/traces",
+        ),
+        emit_interval_seconds=float(os.getenv("DEMO_EMIT_INTERVAL_SECONDS", "2")),
+        topology_change_interval_seconds=float(os.getenv("DEMO_TOPOLOGY_CHANGE_INTERVAL_SECONDS", "20")),
+        initial_edges=int(os.getenv("DEMO_INITIAL_EDGES", "10")),
+        max_active_edges=int(os.getenv("DEMO_MAX_ACTIVE_EDGES", "18")),
+        requests_per_tick=int(os.getenv("DEMO_REQUESTS_PER_TICK", "8")),
+        error_rate=float(os.getenv("DEMO_ERROR_RATE", "0.08")),
+        namespace=os.getenv("DEMO_SERVICE_NAMESPACE", "shop"),
+        instance_id=os.getenv("DEMO_INSTANCE_ID", "live-demo"),
+        random_seed=int(seed_value) if seed_value else None,
+    )
+    config.validate()
+    return config
 
 
 class Topology:
@@ -348,7 +350,7 @@ def run(config: Config) -> None:
 
 
 def main() -> int:
-    run(Config.from_env())
+    run(demo_config_from_env())
     return 0
 
 

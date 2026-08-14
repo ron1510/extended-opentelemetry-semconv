@@ -1,10 +1,39 @@
 from __future__ import annotations
 
 import random
+from unittest.mock import Mock
 
+import pytest
 from opentelemetry.proto.trace.v1.trace_pb2 import Span
 
-from servicegraph_demo.main import EDGES, Topology, build_request, service_resource_attributes
+import servicegraph_demo.main as demo_module
+from servicegraph_demo.main import (
+    EDGES,
+    Topology,
+    build_request,
+    demo_config_from_env,
+    service_resource_attributes,
+)
+
+
+def test_demo_settings_are_cached_and_main_uses_the_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    demo_config_from_env.cache_clear()
+    try:
+        monkeypatch.setenv("DEMO_RANDOM_SEED", "7")
+        first = demo_config_from_env()
+        monkeypatch.setenv("DEMO_RANDOM_SEED", "11")
+
+        assert demo_config_from_env() is first
+        assert first.random_seed == 7
+
+        demo_config_from_env.cache_clear()
+        replacement = demo_config_from_env()
+        runner = Mock()
+        monkeypatch.setattr(demo_module, "run", runner)
+        assert demo_module.main() == 0
+        runner.assert_called_once_with(replacement)
+    finally:
+        demo_config_from_env.cache_clear()
 
 
 def test_topology_grows_then_rotates_and_prioritizes_new_edges() -> None:

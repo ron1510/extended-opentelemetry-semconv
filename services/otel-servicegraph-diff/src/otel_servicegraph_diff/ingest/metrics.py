@@ -7,11 +7,11 @@ from typing import Annotated, Literal, cast
 
 from google.protobuf.json_format import ParseDict, ParseError  # type: ignore[import-untyped]
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
+from opentelemetry.proto.common.v1.common_pb2 import AnyValue
 from opentelemetry.proto.metrics.v1.metrics_pb2 import AggregationTemporality, Metric, NumberDataPoint
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from otel_servicegraph_diff.engine.elements import FrozenModel
-from otel_servicegraph_diff.ingest.otlp import key_values_to_attributes
 
 SERVICE_GRAPH_REQUEST_TOTAL = "traces_service_graph_request_total"
 SERVICE_GRAPH_REQUEST_FAILED_TOTAL = "traces_service_graph_request_failed_total"
@@ -28,6 +28,7 @@ type NonNegativeFiniteFloat = Annotated[
     Field(strict=True, ge=0, allow_inf_nan=False),
 ]
 type MetricValue = NonNegativeStrictInt | NonNegativeFiniteFloat
+type TelemetryScalar = str | bool | int | float
 type JsonValue = None | str | bool | int | float | list[JsonValue] | dict[str, JsonValue]
 
 
@@ -35,7 +36,7 @@ class MetricPoint(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     name: SupportedMetricName
-    attributes: dict[str, str | bool | int | float] = Field(default_factory=dict)
+    attributes: dict[str, TelemetryScalar] = Field(default_factory=dict)
     value: MetricValue
     observed_at_unix_nano: int = Field(gt=0)
 
@@ -100,15 +101,27 @@ def _metric_points(metric: Metric) -> Iterator[MetricPoint | IngestRejection]:
             yield ingest_rejection("invalid_servicegraph_datapoint", exc)
 
 
-def _scalar_attributes(point: NumberDataPoint) -> dict[str, str | bool | int | float]:
-    attributes: dict[str, str | bool | int | float] = {}
-    for key, value in key_values_to_attributes(point.attributes).items():
-        match value:
-            case str() | bool() | int() | float():
-                attributes[key] = value
-            case _:
-                continue
+def _scalar_attributes(point: NumberDataPoint) -> dict[str, TelemetryScalar]:
+    attributes: dict[str, TelemetryScalar] = {}
+    for item in point.attributes:
+        value = _scalar_value(item.value)
+        if value is not None:
+            attributes[item.key] = value
     return attributes
+
+
+def _scalar_value(value: AnyValue) -> TelemetryScalar | None:
+    match value.WhichOneof("value"):
+        case "string_value":
+            return value.string_value
+        case "bool_value":
+            return value.bool_value
+        case "int_value":
+            return value.int_value
+        case "double_value":
+            return value.double_value
+        case _:
+            return None
 
 
 def _number_value(point: NumberDataPoint) -> int | float:
